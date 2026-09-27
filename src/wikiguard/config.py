@@ -54,6 +54,15 @@ class Config:
     wikis: List[str] = field(default_factory=lambda: ["enwiki", "dewiki", "frwiki"])
 
     # ------------------------------------------------------------------ #
+    # SSE connector                                                        #
+    # ------------------------------------------------------------------ #
+    stream_url: str = "https://stream.wikimedia.org/v2/stream/recentchange"
+    flush_seconds: float = 10.0
+    flush_max_events: int = 2000
+    connect_timeout: float = 10.0
+    read_timeout: float = 60.0
+
+    # ------------------------------------------------------------------ #
     # Validation                                                           #
     # ------------------------------------------------------------------ #
     def __post_init__(self) -> None:
@@ -111,6 +120,11 @@ class Config:
     def schema_path(self) -> str:
         """Volume sub-directory for persisted Spark schema files."""
         return f"{self.volume_path}/schema"
+
+    @property
+    def connector_checkpoint_file(self) -> str:
+        """Path to the SSE connector's Last-Event-ID checkpoint."""
+        return f"{self.checkpoint_path}/connector/last_event_id"
 
 
 # ---------------------------------------------------------------------------
