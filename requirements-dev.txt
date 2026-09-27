@@ -1,0 +1,10 @@
+# Testing
+pytest>=7.4
+pytest-mock>=3.12
+
+# HTTP (also a runtime dependency -- no separate requirements.txt yet)
+requests>=2.31
+urllib3>=2.0
+
+# Databricks SDK (used by scripts/deploy_jobs.py)
+databricks-sdk>=0.24
