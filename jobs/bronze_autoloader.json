@@ -1,0 +1,17 @@
+{
+  "name": "wikiguard-bronze-autoloader",
+  "continuous": {
+    "pause_status": "UNPAUSED"
+  },
+  "tasks": [
+    {
+      "task_key": "run_bronze_autoloader",
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/ruimigueltcarvalho@gmail.com/wikiguard.databricks/notebooks/11_bronze_autoloader",
+        "base_parameters": {
+          "max_seconds": ""
+        }
+      }
+    }
+  ]
+}
