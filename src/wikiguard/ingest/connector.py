@@ -202,39 +202,39 @@ def run(
             try:
                 log.info("Connecting to %s", config.stream_url)
                 extra = {"Last-Event-ID": last_id} if last_id else {}
-                resp = requests.get(
+                with requests.get(
                     config.stream_url,
                     headers={**hdrs, **extra},
                     stream=True,
                     timeout=(config.connect_timeout, config.read_timeout),
-                )
+                ) as resp:
 
-                if resp.status_code == 403:
-                    resp.close()
-                    raise SystemExit(
-                        "HTTP 403 -- Wikimedia rejected the request.  "
-                        "Check CONFIG.contact_email (Wikimedia task T400119)."
-                    )
-                resp.raise_for_status()
-                log.info("Connected (HTTP %d)", resp.status_code)
-                backoff = 1.0
+                    if resp.status_code == 403:
+                        raise SystemExit(
+                            "HTTP 403 -- Wikimedia rejected the request.  "
+                            "Check CONFIG.contact_email (Wikimedia task T400119)."
+                        )
+                    resp.raise_for_status()
+                    log.info("Connected (HTTP %d)", resp.status_code)
+                    backoff = 1.0
 
-                for eid, data in parse_sse(
-                    resp.iter_lines(decode_unicode=True)
-                ):
-                    stats.events += 1
-                    writer.append(data)
-                    if eid:
-                        last_id = eid
+                    resp.encoding = "utf-8"
+                    for eid, data in parse_sse(
+                        resp.iter_lines(decode_unicode=True)
+                    ):
+                        stats.events += 1
+                        writer.append(data)
+                        if eid:
+                            last_id = eid
 
-                    if writer.should_flush:
-                        writer.flush()
-                        stats.files += 1
-                        if last_id:
-                            _save_checkpoint(config, last_id)
+                        if writer.should_flush:
+                            writer.flush()
+                            stats.files += 1
+                            if last_id:
+                                _save_checkpoint(config, last_id)
 
-                    if deadline and time.time() >= deadline:
-                        break
+                        if deadline and time.time() >= deadline:
+                            break
 
                 log.info("Stream ended -- will reconnect")
 
