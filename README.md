@@ -126,33 +126,37 @@ pytest tests/unit/test_config.py -v
 
 ## Jobs
 
-Job definitions live as JSON in `jobs/` and are deployed with `scripts/deploy_jobs.py`
-(runs locally, authenticated through the Databricks CLI — no Asset Bundles).
+Job definitions live as JSON in `jobs/`.  **Primary deploy route: run
+`notebooks/01_deploy_jobs` from the workspace** — set the `job_file` widget
+empty to deploy all jobs, or enter a filename (e.g. `ingest_connector.json`)
+to update one job.  Locally, `scripts/deploy_jobs.py` provides the same
+functionality via the Databricks CLI.
 
-```bash
-# Deploy (or update) the ingest connector job
-python scripts/deploy_jobs.py jobs/ingest_connector.json
+| Job | Notebook | Description |
+| --- | --- | --- |
+| `wikiguard-ingest-connector` | `10_ingest_connector` | Reads Wikimedia EventStreams and writes JSONL files to the Volume |
+| `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Auto Loader loop that ingests JSONL files into the bronze Delta table |
 
-# Deploy all jobs at once
-python scripts/deploy_jobs.py
-```
+Both jobs run in **continuous mode**: Databricks keeps exactly one run active
+at all times and restarts automatically if the run ends or fails.
 
-The ingest connector runs in **continuous mode**: Databricks keeps exactly one run
-active at all times and starts a new one automatically if the run ends or fails.  This
-guarantees only one connector is ever writing to the Volume.
+> **Why the bronze job uses an AvailableNow loop:** serverless compute does
+> not support time-based streaming triggers (`processingTime`) or the default
+> no-trigger mode — only `Trigger.AvailableNow` is available.  `bronze.py`
+> runs an AvailableNow batch, then sleeps 10 seconds in plain Python, and
+> repeats, keeping latency under one minute without any unsupported trigger.
 
-To pause the job (stop the connector without deleting it):
+To pause a job without deleting it:
 
 ```bash
 databricks jobs update <job-id> --json '{"continuous": {"pause_status": "PAUSED"}}'
 ```
 
-Or toggle it in the Jobs UI: **Jobs -> wikiguard-ingest-connector -> Pause**.
+Or toggle it in the Jobs UI.
 
 > **Do not run `notebooks/10_ingest_connector` by hand while the job is active.**
-> Two connectors writing to the same `events/` folder will interleave files correctly
-> (filenames are collision-safe), but they will double-write events and waste resources.
-> If you need to test the notebook interactively, pause the job first.
+> Two connectors writing to the same `events/` folder will double-write events.
+> Pause the job before testing the notebook interactively.
 
 ## Config fields
 
