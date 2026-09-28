@@ -124,6 +124,36 @@ pytest tests/ -v
 pytest tests/unit/test_config.py -v
 ```
 
+## Jobs
+
+Job definitions live as JSON in `jobs/` and are deployed with `scripts/deploy_jobs.py`
+(runs locally, authenticated through the Databricks CLI — no Asset Bundles).
+
+```bash
+# Deploy (or update) the ingest connector job
+python scripts/deploy_jobs.py jobs/ingest_connector.json
+
+# Deploy all jobs at once
+python scripts/deploy_jobs.py
+```
+
+The ingest connector runs in **continuous mode**: Databricks keeps exactly one run
+active at all times and starts a new one automatically if the run ends or fails.  This
+guarantees only one connector is ever writing to the Volume.
+
+To pause the job (stop the connector without deleting it):
+
+```bash
+databricks jobs update <job-id> --json '{"continuous": {"pause_status": "PAUSED"}}'
+```
+
+Or toggle it in the Jobs UI: **Jobs -> wikiguard-ingest-connector -> Pause**.
+
+> **Do not run `notebooks/10_ingest_connector` by hand while the job is active.**
+> Two connectors writing to the same `events/` folder will interleave files correctly
+> (filenames are collision-safe), but they will double-write events and waste resources.
+> If you need to test the notebook interactively, pause the job first.
+
 ## Config fields
 
 All configuration lives in `src/wikiguard/config.py` as a single frozen dataclass.
