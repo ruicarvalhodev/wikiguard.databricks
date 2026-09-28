@@ -1,0 +1,17 @@
+{
+  "name": "wikiguard-ingest-connector",
+  "continuous": {
+    "pause_status": "UNPAUSED"
+  },
+  "tasks": [
+    {
+      "task_key": "run_connector",
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/ruimigueltcarvalho@gmail.com/wikiguard.databricks/notebooks/10_ingest_connector",
+        "base_parameters": {
+          "max_seconds": ""
+        }
+      }
+    }
+  ]
+}
