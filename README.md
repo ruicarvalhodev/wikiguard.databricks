@@ -135,7 +135,7 @@ functionality via the Databricks CLI.
 | Job | Notebook | Description |
 | --- | --- | --- |
 | `wikiguard-ingest-connector` | `10_ingest_connector` | Reads Wikimedia EventStreams and writes JSONL files to the Volume |
-| `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Auto Loader loop that ingests JSONL files into the bronze Delta table |
+| `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Each iteration ingests new JSONL files into bronze, then parses and merges them into the silver edits table |
 
 Both jobs run in **continuous mode**: Databricks keeps exactly one run active
 at all times and restarts automatically if the run ends or fails.
