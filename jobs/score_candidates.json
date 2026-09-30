@@ -15,6 +15,16 @@
           "max_rows": "300"
         }
       }
+    },
+    {
+      "task_key": "enrich_diffs",
+      "depends_on": [{"task_key": "score_candidates"}],
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/ruimigueltcarvalho@gmail.com/wikiguard.databricks/notebooks/22_enrich_diffs",
+        "base_parameters": {
+          "max_rows": "200"
+        }
+      }
     }
   ]
 }
