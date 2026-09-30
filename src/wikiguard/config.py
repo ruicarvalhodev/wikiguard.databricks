@@ -136,6 +136,11 @@ class Config:
         """Quarantine table for rows that fail silver validation."""
         return f"{self.catalog}.{self.silver_schema}.edits_quarantine"
 
+    @property
+    def silver_candidates_table(self) -> str:
+        """Fully qualified silver candidates table."""
+        return f"{self.catalog}.{self.silver_schema}.candidates"
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton -- import this for normal use.

@@ -12,7 +12,7 @@
 import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 
-dbutils.widgets.text("max_seconds", "60", "max_seconds (empty = forever)")
+dbutils.widgets.text("max_seconds", "120", "max_seconds (empty = forever)")
 _raw = dbutils.widgets.get("max_seconds").strip()
 max_seconds = float(_raw) if _raw else None
 
