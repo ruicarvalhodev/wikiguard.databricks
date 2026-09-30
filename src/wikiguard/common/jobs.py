@@ -28,6 +28,19 @@ _PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent.parent
 JOBS_DIR: Path = _PROJECT_ROOT / "jobs"
 
 
+def _force_paused(definition: dict) -> None:
+    """Force ``pause_status: PAUSED`` on whichever trigger block is present.
+
+    Applied to every deploy so jobs always start paused regardless of what
+    the JSON file on disk says.  The caller must resume the job deliberately
+    via the Jobs UI or the CLI.
+    """
+    for key in ("continuous", "schedule", "trigger"):
+        if key in definition:
+            definition[key]["pause_status"] = "PAUSED"
+            break
+
+
 def upsert_job(
     json_path: str | Path,
     client: Optional[WorkspaceClient] = None,
@@ -62,6 +75,7 @@ def upsert_job(
     wc = client or WorkspaceClient()
     existing = {j.settings.name: j for j in wc.jobs.list()}
 
+    _force_paused(definition)
     settings = JobSettings.from_dict(definition)
     if job_name in existing:
         job_id: int = existing[job_name].job_id

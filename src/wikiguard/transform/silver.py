@@ -19,7 +19,9 @@ from pyspark.sql.functions import (
     col,
     current_timestamp,
     from_json,
+    lit,
     split,
+    when,
 )
 
 from wikiguard.common.schemas import RECENTCHANGE_SCHEMA
@@ -54,44 +56,41 @@ def process_once(spark: SparkSession, config: Config = CONFIG) -> int:
         if batch_df.isEmpty():
             return
 
-        deduped = batch_df.dropDuplicates(["event_id"])
+        # Classify rows — first match wins
+        classified = batch_df.withColumn(
+            "_reason",
+            when(col("e.meta.id").isNull(), lit("unparseable_json"))
+            .when(col("e.meta.dt").cast("timestamp").isNull(), lit("bad_timestamp"))
+            .when(col("e.wiki").isNull() | (col("e.wiki") == ""), lit("missing_wiki"))
+            .otherwise(lit(None).cast("string")),
+        )
 
-        if not spark.catalog.tableExists(config.silver_edits_table):
+        invalid = classified.filter(col("_reason").isNotNull())
+        valid   = classified.filter(col("_reason").isNull())
+
+        # --- quarantine invalid rows ---
+        qcount = invalid.count()
+        if qcount > 0:
+            log.info("batch_id=%s quarantined=%d rows", batch_id, qcount)
             (
-                deduped.write
+                invalid.select(
+                    col("payload"),
+                    col("_reason").alias("reason"),
+                    col("ingest_ts"),
+                    col("source_file"),
+                    current_timestamp().alias("quarantined_ts"),
+                )
+                .write
                 .format("delta")
-                .partitionBy("event_date")
-                .saveAsTable(config.silver_edits_table)
+                .mode("append")
+                .saveAsTable(config.silver_quarantine_table)
             )
+
+        # --- valid rows → silver.edits ---
+        if valid.isEmpty():
             return
 
-        (
-            DeltaTable.forName(spark, config.silver_edits_table)
-            .alias("t")
-            .merge(
-                deduped.alias("s"),
-                # Restrict the target scan to recent partitions so the MERGE
-                # never does a full table scan.  Connector replays arrive
-                # within seconds of a restart, so 1 day is more than enough.
-                "t.event_id = s.event_id "
-                "AND t.event_date >= date_sub(current_date(), 1)",
-            )
-            .whenNotMatchedInsertAll()
-            .execute()
-        )
-
-    silver_df = (
-        spark.readStream
-        .table(config.bronze_table)
-        .select(
-            from_json(col("payload"), RECENTCHANGE_SCHEMA).alias("e"),
-            col("ingest_ts"),
-        )
-        # Drop canary events and rows where JSON parsing failed
-        .filter(
-            (col("e.meta.domain") != "canary") & col("e.meta.id").isNotNull()
-        )
-        .select(
+        silver_rows = valid.select(
             col("e.meta.id").alias("event_id"),
             col("e.meta.dt").cast("timestamp").alias("event_ts"),
             col("e.meta.dt").cast("timestamp").cast("date").alias("event_date"),
@@ -102,13 +101,12 @@ def process_once(spark: SparkSession, config: Config = CONFIG) -> int:
             col("e.title").alias("title"),
             col("e.user").alias("user"),
             col("e.comment").alias("comment"),
-            # First label of the server_name, e.g. "pt" from "pt.wikipedia.org"
             split(col("e.server_name"), r"\.")[0].alias("lang"),
             col("e.server_name").endswith(".wikipedia.org").alias("is_wikipedia"),
             col("e.bot").alias("is_bot"),
             col("e.minor").alias("is_minor"),
-            # patrolled is absent on wikis where patrolling is disabled;
-            # NULL here means "not applicable", which is distinct from false.
+            # patrolled absent on wikis where patrolling is disabled;
+            # NULL means "not applicable", distinct from false.
             col("e.patrolled").cast("string").alias("patrol_state"),
             col("e.length.old").alias("length_old"),
             col("e.length.new").alias("length_new"),
@@ -125,10 +123,49 @@ def process_once(spark: SparkSession, config: Config = CONFIG) -> int:
             col("ingest_ts"),
             current_timestamp().alias("silver_ts"),
         )
+
+        deduped = silver_rows.dropDuplicates(["event_id"])
+
+        if not spark.catalog.tableExists(config.silver_edits_table):
+            (
+                deduped.write
+                .format("delta")
+                .partitionBy("event_date")
+                .saveAsTable(config.silver_edits_table)
+            )
+            return
+
+        (
+            DeltaTable.forName(spark, config.silver_edits_table)
+            .alias("t")
+            .merge(
+                deduped.alias("s"),
+                "t.event_id = s.event_id "
+                "AND t.event_date >= date_sub(current_date(), 1)",
+            )
+            .whenNotMatchedInsertAll()
+            .execute()
+        )
+
+    # Stream: parse payload and keep original bronze columns so the quarantine
+    # path has payload, ingest_ts, and source_file available.
+    # Null-safe canary filter: rows where e.meta.domain is null (unparseable
+    # JSON) pass through to the quarantine path instead of being silently
+    # dropped by a plain != comparison.
+    stream_df = (
+        spark.readStream
+        .table(config.bronze_table)
+        .select(
+            col("payload"),
+            col("ingest_ts"),
+            col("source_file"),
+            from_json(col("payload"), RECENTCHANGE_SCHEMA).alias("e"),
+        )
+        .filter(~col("e.meta.domain").eqNullSafe("canary"))
     )
 
     query = (
-        silver_df.writeStream
+        stream_df.writeStream
         .foreachBatch(_merge_batch)
         .trigger(availableNow=True)
         .option("checkpointLocation", f"{config.checkpoint_path}/silver")

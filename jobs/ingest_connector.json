@@ -1,7 +1,7 @@
 {
   "name": "wikiguard-ingest-connector",
   "continuous": {
-    "pause_status": "UNPAUSED"
+    "pause_status": "PAUSED"
   },
   "tasks": [
     {

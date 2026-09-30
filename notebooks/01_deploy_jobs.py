@@ -22,4 +22,4 @@ else:
         print(f"No job definitions found in {JOBS_DIR}")
 
 for job_name, job_id, action in results:
-    print(f"[deploy] {action} '{job_name}' (id={job_id})")
+    print(f"[deploy] {action} '{job_name}' (id={job_id}) — PAUSED")

@@ -131,6 +131,11 @@ class Config:
         """Fully qualified silver edits table: ``catalog.silver_schema.edits``."""
         return f"{self.catalog}.{self.silver_schema}.edits"
 
+    @property
+    def silver_quarantine_table(self) -> str:
+        """Quarantine table for rows that fail silver validation."""
+        return f"{self.catalog}.{self.silver_schema}.edits_quarantine"
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton -- import this for normal use.
