@@ -13,7 +13,7 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Enrich pending diffs and fill embeddings
+# DBTITLE 0,Enrich pending diffs and fill embeddings
 import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 

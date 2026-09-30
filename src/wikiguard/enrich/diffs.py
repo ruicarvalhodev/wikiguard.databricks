@@ -12,7 +12,7 @@ import re
 
 from bs4 import BeautifulSoup
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, current_timestamp
+from pyspark.sql.functions import col, current_timestamp, expr
 from pyspark.sql.types import (
     ArrayType,
     DoubleType,
@@ -67,6 +67,31 @@ def _diff_text(added: str | None, removed: str | None) -> str | None:
     return f"Added: {(added or '')[:1000]}\nRemoved: {(removed or '')[:1000]}"
 
 
+def _extract_changed_text(tds, inline_tag: str) -> str:
+    """Extract the changed portion of text from a list of diff td cells.
+
+    For each td: if it contains ``inline_tag.diffchange`` elements, take only
+    those (the actual changed spans); otherwise the whole line was added or
+    removed, so take the full cell text.
+
+    Parameters
+    ----------
+    tds:
+        Result of ``soup.find_all("td", class_="diff-addedline")`` or the
+        deleted equivalent.
+    inline_tag:
+        ``"ins"`` for added lines, ``"del"`` for deleted lines.
+    """
+    parts = []
+    for td in tds:
+        inlines = td.find_all(inline_tag, class_="diffchange")
+        if inlines:
+            parts.append(" ".join(el.get_text(strip=True) for el in inlines))
+        else:
+            parts.append(td.get_text(separator=" ", strip=True))
+    return " ".join(parts)
+
+
 def _fetch_diff(
     session,
     lang: str,
@@ -100,13 +125,11 @@ def _fetch_diff(
     html = data.get("compare", {}).get("body", "")
     soup = BeautifulSoup(html, "html.parser")
 
-    removed_text = " ".join(
-        td.get_text(separator=" ", strip=True)
-        for td in soup.find_all("td", class_="diff-deletedline")
+    removed_text = _extract_changed_text(
+        soup.find_all("td", class_="diff-deletedline"), "del"
     )
-    added_text = " ".join(
-        td.get_text(separator=" ", strip=True)
-        for td in soup.find_all("td", class_="diff-addedline")
+    added_text = _extract_changed_text(
+        soup.find_all("td", class_="diff-addedline"), "ins"
     )
     return added_text, removed_text, None
 
@@ -191,33 +214,25 @@ def enrich_pending(
             "error":         error_msg,
         })
 
+    n_to_embed = sum(1 for r in records if r["diff_text"] is not None)
+
     if records:
-        (
+        new_df = (
             spark.createDataFrame(records, schema=_DIFFS_SCHEMA)
             .withColumn("fetched_at", current_timestamp())
+        )
+        new_df = new_df.withColumn(
+            "embedding",
+            expr(
+                f"CASE WHEN diff_text IS NOT NULL "
+                f"THEN ai_query('{config.embedding_endpoint}', diff_text) END"
+            ),
+        )
+        (
+            new_df
             .write.format("delta").mode("append")
             .saveAsTable(config.silver_edit_diffs_table)
         )
-
-    # Fill embeddings for all rows with diff_text but no embedding yet
-    # (covers new rows plus any that failed in earlier runs).
-    n_to_embed = 0
-    if spark.catalog.tableExists(config.silver_edit_diffs_table):
-        n_to_embed = int(
-            spark.sql(f"""
-                SELECT count(*)
-                FROM {config.silver_edit_diffs_table}
-                WHERE embedding IS NULL AND diff_text IS NOT NULL
-            """).collect()[0][0]
-        )
-        if n_to_embed > 0:
-            spark.sql(f"""
-                UPDATE {config.silver_edit_diffs_table}
-                SET embedding = ai_query('{config.embedding_endpoint}', diff_text,
-                                         returnType => 'ARRAY<FLOAT>')
-                WHERE embedding IS NULL AND diff_text IS NOT NULL
-            """)
-            log.info("Filled %d embeddings", n_to_embed)
 
     return {
         "selected": n_selected,
