@@ -58,6 +58,7 @@ class Config:
         "https://api.wikimedia.org/service/lw/inference/v1/models"
         "/revertrisk-language-agnostic:predict"
     )
+    embedding_endpoint: str = "databricks-gte-large-en"
 
     # ------------------------------------------------------------------ #
     # SSE connector                                                        #
@@ -156,6 +157,16 @@ class Config:
     def silver_edit_risk_errors_table(self) -> str:
         """Fully qualified edit risk errors table (failed scoring attempts)."""
         return f"{self.catalog}.{self.silver_schema}.edit_risk_errors"
+
+    @property
+    def silver_edit_diffs_table(self) -> str:
+        """Fully qualified edit diffs table (fetched diff text + embeddings)."""
+        return f"{self.catalog}.{self.silver_schema}.edit_diffs"
+
+    @property
+    def gold_triage_table(self) -> str:
+        """Fully qualified gold triage candidates table (the Lakebase review queue)."""
+        return f"{self.catalog}.{self.gold_schema}.triage_candidates"
 
 
 def load_contact_email() -> str:

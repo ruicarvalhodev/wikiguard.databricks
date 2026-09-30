@@ -136,7 +136,7 @@ functionality via the Databricks CLI.
 | --- | --- | --- |
 | `wikiguard-ingest-connector` | `10_ingest_connector` | Reads Wikimedia EventStreams and writes JSONL files to the Volume |
 | `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Each iteration runs three steps: bronze (Auto Loader), silver edits (parse + MERGE), silver candidates (filter + tier) |
-| `wikiguard-score-candidates` | `21_score_candidates` | Scheduled every 5 min: scores new tier A and B candidates with Lift Wing revertrisk, writes to edit_risk |
+| `wikiguard-score-candidates` | `21_score_candidates` → `22_enrich_diffs` | Scheduled every 5 min, two sequential tasks: (1) scores tier A/B candidates with Lift Wing → edit_risk → gold.triage_candidates; (2) fetches MediaWiki diffs + fills embeddings via ai_query → silver.edit_diffs |
 
 Both jobs run in **continuous mode**: Databricks keeps exactly one run active
 at all times and restarts automatically if the run ends or fails.
@@ -150,6 +150,8 @@ at all times and restarts automatically if the run ends or fails.
 Malformed silver rows (unparseable JSON, bad timestamp, missing wiki) go to `edits_quarantine` with a `reason` column instead of being silently dropped.
 
 To rebuild `silver.candidates` after changing the tier rules: `DROP TABLE bootcamp_students.wikiguard_silver.candidates`, delete the `candidates/` subfolder inside the checkpoint Volume (`/Volumes/bootcamp_students/wikiguard_bronze/landing/checkpoints/`), then resume the job — the next iteration rebuilds it from `silver.edits`.
+
+`silver.edit_diffs` stores the parsed diff text and a 1024-dim embedding for each scored edit. `wikiguard.enrich.similarity.find_similar_cases(spark, config, wiki, rev_id, k=5)` queries this table with brute-force cosine similarity and returns the k nearest neighbours joined to the gold queue — the agent's find-similar tool (task 4.1b) calls it directly.
 
 **Every deploy leaves jobs paused** — the deploy script forces `pause_status: PAUSED` regardless of what the JSON file says. To start a job after deploying, open it in the Jobs UI and click **Resume**. Re-running the deploy notebook while a job is running will pause it.
 
