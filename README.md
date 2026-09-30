@@ -157,6 +157,16 @@ To rebuild `silver.candidates` after changing the tier rules: `DROP TABLE bootca
 > Two connectors writing to the same `events/` folder will double-write events.
 > Pause the job before testing the notebook interactively.
 
+## Secrets
+
+| Scope | Key | How to create |
+| --- | --- | --- |
+| `wikiguard` | `contact_email` | Run `notebooks/03_create_secrets` once; type the operator email into the widget |
+
+The email is embedded in every `User-Agent` header sent to Wikimedia (required by their bot policy, task T400119). It is stored as a Databricks secret rather than committed to the repository.
+
+The Databricks App (task 6.8) will need READ permission on the `wikiguard` scope. Grant it in the Secrets UI after the app is created.
+
 ## Config fields
 
 All configuration lives in `src/wikiguard/config.py` as a single frozen dataclass.

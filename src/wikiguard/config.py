@@ -28,6 +28,7 @@ projects in the same shared catalog.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import List
 
@@ -52,6 +53,7 @@ class Config:
     # ------------------------------------------------------------------ #
     contact_email: str = _PLACEHOLDER_EMAIL
     wikis: List[str] = field(default_factory=lambda: ["enwiki", "dewiki", "frwiki"])
+    secret_scope: str = "wikiguard"
     liftwing_url: str = (
         "https://api.wikimedia.org/service/lw/inference/v1/models"
         "/revertrisk-language-agnostic:predict"
@@ -150,9 +152,43 @@ class Config:
         """Fully qualified edit risk scores table."""
         return f"{self.catalog}.{self.silver_schema}.edit_risk"
 
+    @property
+    def silver_edit_risk_errors_table(self) -> str:
+        """Fully qualified edit risk errors table (failed scoring attempts)."""
+        return f"{self.catalog}.{self.silver_schema}.edit_risk_errors"
+
+
+def load_contact_email() -> str:
+    """
+    Load the operator contact email.
+
+    On Databricks (``DATABRICKS_RUNTIME_VERSION`` is set): reads the secret
+    ``wikiguard/contact_email`` via ``dbutils``.  Raises ``RuntimeError``
+    with a helpful message if the secret is missing.
+
+    Locally: reads ``WIKIGUARD_CONTACT_EMAIL`` env var, or falls back to
+    ``local-dev@example.com`` (safe for unit tests, which never contact
+    Wikimedia).
+    """
+    # Env-var override wins everywhere — lets tests (and CI) skip the vault.
+    if email := os.environ.get("WIKIGUARD_CONTACT_EMAIL"):
+        return email
+
+    if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
+        try:
+            from databricks.sdk.runtime import dbutils  # noqa: PLC0415
+            return dbutils.secrets.get("wikiguard", "contact_email")
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not read secret 'wikiguard/contact_email'.  "
+                "Run notebooks/03_create_secrets to set it up."
+            ) from exc
+
+    return "local-dev@example.com"
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton -- import this for normal use.
 # Tests that need a different catalog/schema construct a new Config() directly.
 # ---------------------------------------------------------------------------
-CONFIG = Config(contact_email="wikiguard-capstone@example.com")
+CONFIG = Config(contact_email=load_contact_email())

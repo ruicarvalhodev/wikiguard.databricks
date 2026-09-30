@@ -12,7 +12,7 @@
 import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 
-dbutils.widgets.text("max_rows", "300", "max_rows")
+dbutils.widgets.text("max_rows", "20", "max_rows")
 _max_rows = int(dbutils.widgets.get("max_rows") or "300")
 
 from wikiguard.enrich.scoring import score_pending

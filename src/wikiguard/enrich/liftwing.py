@@ -7,12 +7,100 @@ at this POC stage.
 """
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional
 
 import requests
 
 log = logging.getLogger(__name__)
+
+
+class InvalidResponse(Exception):
+    """Raised when the Lift Wing response body fails validation.
+
+    Attributes
+    ----------
+    body_text:
+        The raw response body, available to the caller for error logging.
+    """
+
+    def __init__(self, message: str, body_text: str = "") -> None:
+        super().__init__(message)
+        self.body_text = body_text
+
+
+def parse_response(status_code: int, body_text: str) -> dict:
+    """
+    Parse and validate a Lift Wing API response.
+
+    For HTTP 200, validates that the body is JSON, that
+    ``output.probabilities.true`` is a number in ``[0, 1]``, and that
+    ``model_version`` is present.  Raises ``InvalidResponse`` if any check
+    fails.
+
+    For HTTP 422, returns a null-score result immediately (no validation
+    needed — the model has no parent revision to compare against).
+
+    Parameters
+    ----------
+    status_code:
+        HTTP status code of the response.
+    body_text:
+        Raw response body as a string.
+
+    Returns
+    -------
+    dict
+        Keys: ``revert_risk``, ``prediction``, ``model_version``,
+        ``http_status``.
+
+    Raises
+    ------
+    InvalidResponse
+        If the body fails any validation check.
+    """
+    if status_code == 422:
+        return {
+            "revert_risk":   None,
+            "prediction":    None,
+            "model_version": None,
+            "http_status":   422,
+        }
+
+    try:
+        data = json.loads(body_text)
+    except json.JSONDecodeError as exc:
+        raise InvalidResponse(
+            f"Response is not valid JSON: {exc}", body_text=body_text
+        ) from exc
+
+    output = data.get("output", {})
+    probs  = output.get("probabilities", {})
+
+    revert_risk = probs.get("true")
+    if revert_risk is None:
+        raise InvalidResponse(
+            "output.probabilities.true is missing from response",
+            body_text=body_text,
+        )
+    if not isinstance(revert_risk, (int, float)) or not (0 <= revert_risk <= 1):
+        raise InvalidResponse(
+            f"output.probabilities.true must be a number in [0, 1], got {revert_risk!r}",
+            body_text=body_text,
+        )
+
+    model_version = data.get("model_version")
+    if model_version is None:
+        raise InvalidResponse(
+            "model_version is missing from response", body_text=body_text
+        )
+
+    return {
+        "revert_risk":   float(revert_risk),
+        "prediction":    output.get("prediction"),
+        "model_version": model_version,
+        "http_status":   200,
+    }
 
 
 def score_revision(
@@ -55,25 +143,8 @@ def score_revision(
     )
 
     if resp.status_code == 422:
-        # The model returns 422 when a revision has no parent to compare
-        # against (e.g. page creation with no prior content).  This is
-        # final — retrying will return the same result.
-        return {
-            "revert_risk":   None,
-            "prediction":    None,
-            "model_version": None,
-            "http_status":   422,
-        }
+        return parse_response(422, resp.text)
 
     resp.raise_for_status()  # raises for any other non-2xx
 
-    data   = resp.json()
-    output = data.get("output", {})
-    probs  = output.get("probabilities", {})
-
-    return {
-        "revert_risk":   probs.get("true"),
-        "prediction":    output.get("prediction"),
-        "model_version": data.get("model_version"),
-        "http_status":   200,
-    }
+    return parse_response(200, resp.text)  # may raise InvalidResponse
