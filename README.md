@@ -135,7 +135,7 @@ functionality via the Databricks CLI.
 | Job | Notebook | Description |
 | --- | --- | --- |
 | `wikiguard-ingest-connector` | `10_ingest_connector` | Reads Wikimedia EventStreams and writes JSONL files to the Volume |
-| `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Each iteration ingests new JSONL files into bronze, then parses and merges them into the silver edits table |
+| `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Each iteration runs three steps: bronze (Auto Loader), silver edits (parse + MERGE), silver candidates (filter + tier) |
 
 Both jobs run in **continuous mode**: Databricks keeps exactly one run active
 at all times and restarts automatically if the run ends or fails.
@@ -147,6 +147,8 @@ at all times and restarts automatically if the run ends or fails.
 > repeats, keeping latency under one minute without any unsupported trigger.
 
 Malformed silver rows (unparseable JSON, bad timestamp, missing wiki) go to `edits_quarantine` with a `reason` column instead of being silently dropped.
+
+To rebuild `silver.candidates` after changing the tier rules: `DROP TABLE bootcamp_students.wikiguard_silver.candidates`, delete the `candidates/` subfolder inside the checkpoint Volume (`/Volumes/bootcamp_students/wikiguard_bronze/landing/checkpoints/`), then resume the job — the next iteration rebuilds it from `silver.edits`.
 
 **Every deploy leaves jobs paused** — the deploy script forces `pause_status: PAUSED` regardless of what the JSON file says. To start a job after deploying, open it in the Jobs UI and click **Resume**. Re-running the deploy notebook while a job is running will pause it.
 

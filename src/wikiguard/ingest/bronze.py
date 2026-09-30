@@ -93,7 +93,7 @@ def run_loop(
     max_seconds:
         Stop after this many seconds.  ``None`` runs forever.
     """
-    from wikiguard.transform import silver  # imported here to avoid load-time side-effects
+    from wikiguard.transform import candidates, silver  # imported here to avoid load-time side-effects
 
     deadline = (time.time() + max_seconds) if max_seconds else None
     run = 0
@@ -108,6 +108,10 @@ def run_loop(
         t0 = time.time()
         silver_rows = silver.process_once(spark, config)
         log.info("run=%d step=silver rows=%d duration=%.1fs", run, silver_rows, time.time() - t0)
+
+        t0 = time.time()
+        candidates_rows = candidates.process_once(spark, config)
+        log.info("run=%d step=candidates rows=%d duration=%.1fs", run, candidates_rows, time.time() - t0)
 
         if deadline and time.time() >= deadline:
             break
