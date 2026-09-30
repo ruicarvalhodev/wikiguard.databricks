@@ -126,6 +126,16 @@ class Config:
         """Path to the SSE connector's Last-Event-ID checkpoint."""
         return f"{self.checkpoint_path}/connector/last_event_id"
 
+    @property
+    def silver_edits_table(self) -> str:
+        """Fully qualified silver edits table: ``catalog.silver_schema.edits``."""
+        return f"{self.catalog}.{self.silver_schema}.edits"
+
+    @property
+    def silver_quarantine_table(self) -> str:
+        """Quarantine table for rows that fail silver validation."""
+        return f"{self.catalog}.{self.silver_schema}.edits_quarantine"
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton -- import this for normal use.

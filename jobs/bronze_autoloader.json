@@ -1,7 +1,7 @@
 {
   "name": "wikiguard-bronze-autoloader",
   "continuous": {
-    "pause_status": "UNPAUSED"
+    "pause_status": "PAUSED"
   },
   "tasks": [
     {

@@ -135,7 +135,7 @@ functionality via the Databricks CLI.
 | Job | Notebook | Description |
 | --- | --- | --- |
 | `wikiguard-ingest-connector` | `10_ingest_connector` | Reads Wikimedia EventStreams and writes JSONL files to the Volume |
-| `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Auto Loader loop that ingests JSONL files into the bronze Delta table |
+| `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Each iteration ingests new JSONL files into bronze, then parses and merges them into the silver edits table |
 
 Both jobs run in **continuous mode**: Databricks keeps exactly one run active
 at all times and restarts automatically if the run ends or fails.
@@ -146,13 +146,9 @@ at all times and restarts automatically if the run ends or fails.
 > runs an AvailableNow batch, then sleeps 10 seconds in plain Python, and
 > repeats, keeping latency under one minute without any unsupported trigger.
 
-To pause a job without deleting it:
+Malformed silver rows (unparseable JSON, bad timestamp, missing wiki) go to `edits_quarantine` with a `reason` column instead of being silently dropped.
 
-```bash
-databricks jobs update <job-id> --json '{"continuous": {"pause_status": "PAUSED"}}'
-```
-
-Or toggle it in the Jobs UI.
+**Every deploy leaves jobs paused** — the deploy script forces `pause_status: PAUSED` regardless of what the JSON file says. To start a job after deploying, open it in the Jobs UI and click **Resume**. Re-running the deploy notebook while a job is running will pause it.
 
 > **Do not run `notebooks/10_ingest_connector` by hand while the job is active.**
 > Two connectors writing to the same `events/` folder will double-write events.
