@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, current_date, current_timestamp, date_sub
+from pyspark.sql.functions import col, count as spark_count, current_date, current_timestamp, date_sub
 from pyspark.sql.types import (
     BooleanType,
     DoubleType,
@@ -24,12 +24,12 @@ from pyspark.sql.types import (
 
 from wikiguard.common.http import session_with_retries
 from wikiguard.config import CONFIG, Config
-from wikiguard.enrich.liftwing import score_revision
+from wikiguard.enrich.liftwing import InvalidResponse, score_revision
 
 log = logging.getLogger(__name__)
 
-# Explicit schema avoids type-inference surprises when revert_risk is NULL
-# for a whole batch (which would make Spark infer NullType).
+# Explicit schemas avoid type-inference surprises when nullable columns
+# appear in whole-batch rows (which would make Spark infer NullType).
 _RESULT_SCHEMA = StructType([
     StructField("wiki",          StringType()),
     StructField("rev_id",        LongType()),
@@ -41,6 +41,15 @@ _RESULT_SCHEMA = StructType([
     StructField("http_status",   IntegerType()),
 ])
 
+_ERROR_SCHEMA = StructType([
+    StructField("wiki",          StringType()),
+    StructField("rev_id",        LongType()),
+    StructField("lang",          StringType()),
+    StructField("http_status",   IntegerType()),   # null when no HTTP response
+    StructField("error",         StringType()),
+    StructField("response_body", StringType()),    # first 1000 chars, or null
+])
+
 
 def score_pending(
     spark: SparkSession,
@@ -50,9 +59,9 @@ def score_pending(
     """
     Score pending tier A/B candidates with the Lift Wing revertrisk model.
 
-    Selects rows from silver.candidates that are not already in
-    silver.edit_risk (anti-joined on wiki + rev_id), calls the API, and
-    appends results.  The edit_risk table is created on the first write.
+    Selects candidates not already in edit_risk and not yet exhausted (fewer
+    than 3 prior failures), scores them via the API, appends successes to
+    edit_risk and failures to edit_risk_errors.
 
     Parameters
     ----------
@@ -66,25 +75,37 @@ def score_pending(
     Returns
     -------
     dict
-        Summary with keys: selected, scored, no_parent_422, failed.
+        Summary with keys: selected, scored, no_parent_422, failed,
+        invalid_response, given_up.
     """
     candidates = spark.table(config.silver_candidates_table)
 
-    base = candidates.filter(
+    pending = candidates.filter(
         col("tier").isin("A", "B")
         & (col("event_date") >= date_sub(current_date(), 1))
         & col("rev_new").isNotNull()
     )
 
-    # Anti-join against already-scored revisions (wiki + rev_id are composite key).
+    # Exclude already-scored revisions
     if spark.catalog.tableExists(config.silver_edit_risk_table):
         already = (
             spark.table(config.silver_edit_risk_table)
             .select(col("wiki"), col("rev_id").alias("rev_new"))
         )
-        pending = base.join(already, on=["wiki", "rev_new"], how="left_anti")
-    else:
-        pending = base
+        pending = pending.join(already, on=["wiki", "rev_new"], how="left_anti")
+
+    # Exclude revisions that have hit the 3-attempt limit and count them
+    n_given_up = 0
+    if spark.catalog.tableExists(config.silver_edit_risk_errors_table):
+        exhausted = (
+            spark.table(config.silver_edit_risk_errors_table)
+            .groupBy("wiki", col("rev_id").alias("rev_new"))
+            .agg(spark_count("*").alias("attempts"))
+            .filter(col("attempts") >= 3)
+            .select("wiki", "rev_new")
+        )
+        n_given_up = int(pending.join(exhausted, on=["wiki", "rev_new"], how="inner").count())
+        pending = pending.join(exhausted, on=["wiki", "rev_new"], how="left_anti")
 
     rows = (
         pending
@@ -94,11 +115,13 @@ def score_pending(
         .collect()
     )
 
-    n_selected  = len(rows)
-    n_scored    = 0
-    n_no_parent = 0
-    n_failed    = 0
-    results     = []
+    n_selected        = len(rows)
+    n_scored          = 0
+    n_no_parent       = 0
+    n_failed          = 0
+    n_invalid_response = 0
+    results            = []
+    error_rows         = []
 
     session = session_with_retries(config.contact_email)
 
@@ -120,9 +143,36 @@ def score_pending(
                 n_no_parent += 1
             else:
                 n_scored += 1
+
+        except InvalidResponse as exc:
+            n_invalid_response += 1
+            n_failed += 1
+            log.warning("rev_id=%d wiki=%s invalid response: %s", rev_id, row.wiki, exc)
+            error_rows.append({
+                "wiki":          row.wiki,
+                "rev_id":        rev_id,
+                "lang":          row.lang,
+                "http_status":   200,  # InvalidResponse always comes from a 200 response
+                "error":         str(exc)[:200],
+                "response_body": exc.body_text[:1000] if exc.body_text else None,
+            })
+
         except Exception as exc:
             n_failed += 1
             log.warning("rev_id=%d wiki=%s failed: %s", rev_id, row.wiki, exc)
+            http_status   = None
+            response_body = None
+            if hasattr(exc, "response") and exc.response is not None:
+                http_status   = exc.response.status_code
+                response_body = (exc.response.text or "")[:1000] or None
+            error_rows.append({
+                "wiki":          row.wiki,
+                "rev_id":        rev_id,
+                "lang":          row.lang,
+                "http_status":   http_status,
+                "error":         str(exc)[:200],
+                "response_body": response_body,
+            })
 
     if results:
         (
@@ -132,9 +182,19 @@ def score_pending(
             .saveAsTable(config.silver_edit_risk_table)
         )
 
+    if error_rows:
+        (
+            spark.createDataFrame(error_rows, schema=_ERROR_SCHEMA)
+            .withColumn("attempted_at", current_timestamp())
+            .write.format("delta").mode("append")
+            .saveAsTable(config.silver_edit_risk_errors_table)
+        )
+
     return {
-        "selected":      n_selected,
-        "scored":        n_scored,
-        "no_parent_422": n_no_parent,
-        "failed":        n_failed,
+        "selected":          n_selected,
+        "scored":            n_scored,
+        "no_parent_422":     n_no_parent,
+        "failed":            n_failed,
+        "invalid_response":  n_invalid_response,
+        "given_up":          n_given_up,
     }
