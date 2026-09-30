@@ -52,6 +52,10 @@ class Config:
     # ------------------------------------------------------------------ #
     contact_email: str = _PLACEHOLDER_EMAIL
     wikis: List[str] = field(default_factory=lambda: ["enwiki", "dewiki", "frwiki"])
+    liftwing_url: str = (
+        "https://api.wikimedia.org/service/lw/inference/v1/models"
+        "/revertrisk-language-agnostic:predict"
+    )
 
     # ------------------------------------------------------------------ #
     # SSE connector                                                        #
@@ -140,6 +144,11 @@ class Config:
     def silver_candidates_table(self) -> str:
         """Fully qualified silver candidates table."""
         return f"{self.catalog}.{self.silver_schema}.candidates"
+
+    @property
+    def silver_edit_risk_table(self) -> str:
+        """Fully qualified edit risk scores table."""
+        return f"{self.catalog}.{self.silver_schema}.edit_risk"
 
 
 # ---------------------------------------------------------------------------
