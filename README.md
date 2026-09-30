@@ -136,6 +136,7 @@ functionality via the Databricks CLI.
 | --- | --- | --- |
 | `wikiguard-ingest-connector` | `10_ingest_connector` | Reads Wikimedia EventStreams and writes JSONL files to the Volume |
 | `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Each iteration runs three steps: bronze (Auto Loader), silver edits (parse + MERGE), silver candidates (filter + tier) |
+| `wikiguard-score-candidates` | `21_score_candidates` | Scheduled every 5 min: scores new tier A and B candidates with Lift Wing revertrisk, writes to edit_risk |
 
 Both jobs run in **continuous mode**: Databricks keeps exactly one run active
 at all times and restarts automatically if the run ends or fails.
