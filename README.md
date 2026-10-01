@@ -136,7 +136,7 @@ functionality via the Databricks CLI.
 | --- | --- | --- |
 | `wikiguard-ingest-connector` | `10_ingest_connector` | Reads Wikimedia EventStreams and writes JSONL files to the Volume |
 | `wikiguard-bronze-autoloader` | `11_bronze_autoloader` | Each iteration runs three steps: bronze (Auto Loader), silver edits (parse + MERGE), silver candidates (filter + tier) |
-| `wikiguard-score-candidates` | `21_score_candidates` → `22_enrich_diffs` | Scheduled every 5 min, two sequential tasks: (1) scores tier A/B candidates with Lift Wing → edit_risk → gold.triage_candidates; (2) fetches MediaWiki diffs + fills embeddings via ai_query → silver.edit_diffs |
+| `wikiguard-score-candidates` | `21_score_candidates` → `22_enrich_diffs` + `31_sync_cases` | Scheduled every 5 min, three tasks: (1) scores tier A/B candidates with Lift Wing → edit_risk → gold.triage_candidates; (2) fetches MediaWiki diffs + fills embeddings via ai_query → silver.edit_diffs; (3) copies new candidates into Lakebase `cases` with `ON CONFLICT DO NOTHING` — existing cases keep their status, assignment and notes. Tasks 2 and 3 run in parallel after task 1. |
 
 Both jobs run in **continuous mode**: Databricks keeps exactly one run active
 at all times and restarts automatically if the run ends or fails.
