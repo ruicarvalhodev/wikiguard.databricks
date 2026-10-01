@@ -25,6 +25,16 @@
           "max_rows": "200"
         }
       }
+    },
+    {
+      "task_key": "sync_cases",
+      "depends_on": [{"task_key": "score_candidates"}],
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/ruimigueltcarvalho@gmail.com/wikiguard.databricks/notebooks/31_sync_cases",
+        "base_parameters": {
+          "lookback_hours": "24"
+        }
+      }
     }
   ]
 }
