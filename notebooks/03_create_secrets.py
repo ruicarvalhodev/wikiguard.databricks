@@ -8,32 +8,44 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Create wikiguard secret scope and contact_email secret
+# DBTITLE 1,Create wikiguard secret scope and store secrets
 from databricks.sdk import WorkspaceClient
 
-# Deliberately not importing wikiguard.config: building CONFIG reads this secret,
-# which doesn't exist until this notebook has run.
+# Deliberately not importing wikiguard.config: building CONFIG reads secrets,
+# which don't exist until this notebook has run.
 SCOPE = "wikiguard"   # must match Config.secret_scope in config.py
 
 dbutils.widgets.text("contact_email", "", "contact_email")
-email = dbutils.widgets.get("contact_email").strip()
-if not email:
-    raise ValueError("Enter your operator email in the contact_email widget before running.")
+dbutils.widgets.text("lakebase_url",  "", "lakebase_url")
 
-wc    = WorkspaceClient()
-scope = SCOPE
+email        = dbutils.widgets.get("contact_email").strip()
+lakebase_url = dbutils.widgets.get("lakebase_url").strip()
+
+if not email and not lakebase_url:
+    raise ValueError(
+        "Fill in at least one widget before running: "
+        "contact_email and/or lakebase_url."
+    )
+
+wc = WorkspaceClient()
 
 # Create the scope if it doesn't already exist
 try:
-    wc.secrets.create_scope(scope)
-    print(f"Created secret scope '{scope}'")
+    wc.secrets.create_scope(SCOPE)
+    print(f"Created secret scope '{SCOPE}'")
 except Exception as exc:
     if "already exists" in str(exc).lower():
-        print(f"Secret scope '{scope}' already exists")
+        print(f"Secret scope '{SCOPE}' already exists")
     else:
         raise
 
-# Store the contact email (safe to re-run -- overwrites the previous value)
-wc.secrets.put_secret(scope=scope, key="contact_email", string_value=email)
-print(f"Secret '{scope}/contact_email' stored successfully")
-print("(The email value is not printed to avoid leaving it in cell output)")
+# Store each secret only when its widget is non-empty
+if email:
+    wc.secrets.put_secret(scope=SCOPE, key="contact_email", string_value=email)
+    print(f"Secret '{SCOPE}/contact_email' stored successfully")
+
+if lakebase_url:
+    wc.secrets.put_secret(scope=SCOPE, key="lakebase_url", string_value=lakebase_url)
+    print(f"Secret '{SCOPE}/lakebase_url' stored successfully")
+
+print("(Secret values are not printed to avoid leaving them in cell output)")
