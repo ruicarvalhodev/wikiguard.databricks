@@ -197,3 +197,54 @@ Derived read-only properties:
 | `events_path` | `{volume_path}/events` | |
 | `checkpoint_path` | `{volume_path}/checkpoints` | |
 | `schema_path` | `{volume_path}/schema` | |
+| `connector_checkpoint_file` | `{checkpoint_path}/connector/last_event_id` | |
+
+## Lakebase
+
+The operational review queue lives in a **Lakebase Postgres 17** instance
+dedicated to this project.
+
+| Resource | Value |
+| --- | --- |
+| Project | `wikiguard` |
+| Branch | `production` |
+| Database | `databricks_postgres` |
+| Schema | `public` |
+
+### Application role
+
+All tables are created and owned by the native Postgres role **`wikiguard_app`**,
+which connects with a static password.  The connection string has the form:
+
+    postgresql://wikiguard_app:<password>@<host>/databricks_postgres?sslmode=require
+
+### Secret
+
+| Scope | Key | How to create |
+| --- | --- | --- |
+| `wikiguard` | `lakebase_url` | Run `notebooks/03_create_secrets`; paste the full connection string into the `lakebase_url` widget |
+
+The URL is read at call time by `wikiguard.lakebase.client.get_lakebase_url()`.
+Locally, export `WIKIGUARD_LAKEBASE_URL` instead of using the secret vault.
+
+### Schema setup
+
+Run `notebooks/30_lakebase_setup` once to apply the schema and seed the demo
+reviewers.  The notebook is safe to re-run — every statement is idempotent.
+
+| Object | Description |
+| --- | --- |
+| `case_status` | Enum: `open`, `in_review`, `escalated`, `resolved`, `dismissed` |
+| `reviewers` | Human reviewers with optional per-wiki focus areas |
+| `cases` | Work-queue entries mirroring `gold.triage_candidates` |
+| `case_notes` | Human and agent notes attached to a case |
+| `watchlists` / `watchlist_pages` | Per-reviewer page watchlists |
+| `agent_actions` | Audit log of every tool call made by the AI agent |
+
+A BEFORE UPDATE trigger (`trg_cases_before_update`) on `cases` stamps
+`updated_at` on every update and manages `resolved_at` automatically when
+`status` transitions to or from `resolved` / `dismissed` — agent write tools
+need only change `status`.
+
+`REPLICA IDENTITY FULL` is set on `cases`, `case_notes`, and `agent_actions`
+so the Change Data Feed (Phase 5) carries full before/after row images.
