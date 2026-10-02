@@ -38,8 +38,9 @@ def parse_response(status_code: int, body_text: str) -> dict:
     ``model_version`` is present.  Raises ``InvalidResponse`` if any check
     fails.
 
-    For HTTP 422, returns a null-score result immediately (no validation
-    needed — the model has no parent revision to compare against).
+    For HTTP 400 or 422, returns a null-score result immediately.
+    400 means the wiki is not supported by the model; 422 means there is
+    no parent revision to compare against.
 
     Parameters
     ----------
@@ -59,12 +60,12 @@ def parse_response(status_code: int, body_text: str) -> dict:
     InvalidResponse
         If the body fails any validation check.
     """
-    if status_code == 422:
+    if status_code in (400, 422):
         return {
             "revert_risk":   None,
             "prediction":    None,
             "model_version": None,
-            "http_status":   422,
+            "http_status":   status_code,
         }
 
     try:
@@ -133,8 +134,9 @@ def score_revision(
     Raises
     ------
     requests.RequestException
-        For anything other than 200 or 422 that the session's own retries
-        did not resolve.  The caller should log, skip, and retry next run.
+        For anything other than 200, 400, or 422 that the session's own
+        retries did not resolve.  The caller should log, skip, and retry
+        next run.
     """
     resp = session.post(
         url,
@@ -142,8 +144,8 @@ def score_revision(
         timeout=(10, 30),
     )
 
-    if resp.status_code == 422:
-        return parse_response(422, resp.text)
+    if resp.status_code in (400, 422):
+        return parse_response(resp.status_code, resp.text)
 
     resp.raise_for_status()  # raises for any other non-2xx
 
