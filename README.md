@@ -159,6 +159,32 @@ To rebuild `silver.candidates` after changing the tier rules: `DROP TABLE bootca
 > Two connectors writing to the same `events/` folder will double-write events.
 > Pause the job before testing the notebook interactively.
 
+## Analytics
+
+Lakebase writes Change Data Feed (CDF) events to Delta tables in `wikiguard_bronze`,
+one `lb_<table>_history` table per Postgres table.  Each row carries `_pg_change_type`
+(`insert`, `update_preimage`, `update_postimage`, `delete`), `_pg_lsn`, `_pg_xid`
+(0 for the initial snapshot), and a `_sort_by` ordering key.
+
+**Flow:** Lakebase → CDF → `wikiguard_bronze.lb_cases_history` →
+`wikiguard.analytics.case_events.process_once` → `wikiguard_silver.case_events`
+→ `wikiguard.analytics.build.build_analytics` → gold tables below.
+
+`notebooks/50_analytics` runs every 5 minutes as an independent task of the
+`wikiguard-score-candidates` job, in parallel with the scoring tasks.
+
+| Table | Description |
+| --- | --- |
+| `wikiguard_gold.fact_case_transitions` | One row per case status change; includes `from_status`, `to_status`, and `seconds_in_previous_state`. |
+| `wikiguard_gold.fact_agent_activity` | One row per agent tool call from `lb_agent_actions_history`, with latency and a parsed `ok` boolean. |
+| `wikiguard_gold.agg_agent_daily` | Daily roll-up of agent tool calls: call count, error rate, avg and p95 latency, distinct sessions. |
+| `wikiguard_gold.agg_daily_triage` | Daily triage activity per tier: cases created, transitions into escalated/resolved/dismissed, median hours to close. |
+| `wikiguard_gold.pipeline_health` | Monitoring table: one row appended per run with row counts and CDF lag in seconds. |
+
+To rebuild `silver.case_events` from scratch: drop the table and delete
+`/Volumes/bootcamp_students/wikiguard_bronze/landing/checkpoints/case_events/`.
+The next run re-processes the full `lb_cases_history` history.
+
 ## Secrets
 
 | Scope | Key | How to create |

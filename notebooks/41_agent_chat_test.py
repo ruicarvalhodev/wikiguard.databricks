@@ -46,6 +46,20 @@ def chat(text: str) -> None:
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## CDF Test
+
+# COMMAND ----------
+
+chat("Assign case 7326 to Bruno.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## ------
+
+# COMMAND ----------
+
 chat("Escalate all open cases from ~2026-52775-97 and assign them to Ana, with a note explaining why.")
 
 # COMMAND ----------

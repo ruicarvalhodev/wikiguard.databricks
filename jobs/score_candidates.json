@@ -1,5 +1,15 @@
 {
   "name": "wikiguard-score-candidates",
+  "timeout_seconds": 900,
+  "health": {
+    "rules": [
+      {
+        "metric": "RUN_DURATION_SECONDS",
+        "op": "GREATER_THAN",
+        "value": 300
+      }
+    ]
+  },
   "schedule": {
     "quartz_cron_expression": "0 0/5 * * * ?",
     "timezone_id": "UTC",
@@ -34,6 +44,12 @@
         "base_parameters": {
           "lookback_hours": "24"
         }
+      }
+    },
+    {
+      "task_key": "analytics",
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/ruimigueltcarvalho@gmail.com/wikiguard.databricks/notebooks/50_analytics"
       }
     }
   ]

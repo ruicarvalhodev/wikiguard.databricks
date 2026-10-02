@@ -173,6 +173,55 @@ class Config:
         """Fully qualified gold triage candidates table (the Lakebase review queue)."""
         return f"{self.catalog}.{self.gold_schema}.triage_candidates"
 
+    # ------------------------------------------------------------------ #
+    # Analytics / Lakebase CDF history tables (in bronze schema)           #
+    # ------------------------------------------------------------------ #
+    @property
+    def lb_cases_history(self) -> str:
+        """Lakebase CDF history table for the cases table."""
+        return f"{self.catalog}.{self.bronze_schema}.lb_cases_history"
+
+    @property
+    def lb_agent_actions_history(self) -> str:
+        """Lakebase CDF history table for the agent_actions table."""
+        return f"{self.catalog}.{self.bronze_schema}.lb_agent_actions_history"
+
+    # ------------------------------------------------------------------ #
+    # Analytics silver table                                               #
+    # ------------------------------------------------------------------ #
+    @property
+    def silver_case_events_table(self) -> str:
+        """Silver case events table: one row per case state, incrementally built from lb_cases_history."""
+        return f"{self.catalog}.{self.silver_schema}.case_events"
+
+    # ------------------------------------------------------------------ #
+    # Analytics gold tables                                                #
+    # ------------------------------------------------------------------ #
+    @property
+    def gold_fact_case_transitions(self) -> str:
+        """Gold fact table: one row per case status transition."""
+        return f"{self.catalog}.{self.gold_schema}.fact_case_transitions"
+
+    @property
+    def gold_fact_agent_activity(self) -> str:
+        """Gold fact table: one row per agent tool call."""
+        return f"{self.catalog}.{self.gold_schema}.fact_agent_activity"
+
+    @property
+    def gold_agg_agent_daily(self) -> str:
+        """Gold aggregate: agent tool call metrics rolled up per day and tool name."""
+        return f"{self.catalog}.{self.gold_schema}.agg_agent_daily"
+
+    @property
+    def gold_agg_daily_triage(self) -> str:
+        """Gold aggregate: triage activity rolled up per day and tier."""
+        return f"{self.catalog}.{self.gold_schema}.agg_daily_triage"
+
+    @property
+    def gold_pipeline_health(self) -> str:
+        """Monitoring table: one row appended per analytics pipeline run."""
+        return f"{self.catalog}.{self.gold_schema}.pipeline_health"
+
 
 def load_contact_email() -> str:
     """
