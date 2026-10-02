@@ -275,3 +275,18 @@ with tab_note:
                 st.rerun()
             else:
                 st.error(r.get("error", "Unknown error."))
+
+# ------------------------------------------------------------------ #
+# Ask the agent                                                        #
+# ------------------------------------------------------------------ #
+st.divider()
+if st.button(
+    "\U0001f4ac Ask the agent about this case",
+    use_container_width=True,
+    key="btn_ask_agent",
+):
+    st.session_state["_wg_chat_prefill"] = (
+        f"Tell me about case {case_id}: what happened, "
+        "has it been reverted, and what do you recommend?"
+    )
+    st.switch_page("pages/chat.py")
