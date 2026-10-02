@@ -164,6 +164,7 @@ To rebuild `silver.candidates` after changing the tier rules: `DROP TABLE bootca
 | Scope | Key | How to create |
 | --- | --- | --- |
 | `wikiguard` | `contact_email` | Run `notebooks/03_create_secrets` once; type the operator email into the widget |
+| `wikiguard` | `sql_warehouse_id` | Run `notebooks/03_create_secrets`; paste the SQL warehouse ID into the `sql_warehouse_id` widget |
 
 The email is embedded in every `User-Agent` header sent to Wikimedia (required by their bot policy, task T400119). It is stored as a Databricks secret rather than committed to the repository.
 

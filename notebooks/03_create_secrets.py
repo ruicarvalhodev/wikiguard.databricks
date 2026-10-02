@@ -17,14 +17,16 @@ SCOPE = "wikiguard"   # must match Config.secret_scope in config.py
 
 dbutils.widgets.text("contact_email", "", "contact_email")
 dbutils.widgets.text("lakebase_url",  "", "lakebase_url")
+dbutils.widgets.text("sql_warehouse_id", "", "sql_warehouse_id")
 
 email        = dbutils.widgets.get("contact_email").strip()
 lakebase_url = dbutils.widgets.get("lakebase_url").strip()
+sql_wh_id    = dbutils.widgets.get("sql_warehouse_id").strip()
 
-if not email and not lakebase_url:
+if not email and not lakebase_url and not sql_wh_id:
     raise ValueError(
         "Fill in at least one widget before running: "
-        "contact_email and/or lakebase_url."
+        "contact_email, lakebase_url, and/or sql_warehouse_id."
     )
 
 wc = WorkspaceClient()
@@ -47,5 +49,9 @@ if email:
 if lakebase_url:
     wc.secrets.put_secret(scope=SCOPE, key="lakebase_url", string_value=lakebase_url)
     print(f"Secret '{SCOPE}/lakebase_url' stored successfully")
+
+if sql_wh_id:
+    wc.secrets.put_secret(scope=SCOPE, key="sql_warehouse_id", string_value=sql_wh_id)
+    print(f"Secret '{SCOPE}/sql_warehouse_id' stored successfully")
 
 print("(Secret values are not printed to avoid leaving them in cell output)")
