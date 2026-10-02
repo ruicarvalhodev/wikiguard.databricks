@@ -44,9 +44,12 @@ def assign_case(case_id: int, reviewer: str) -> dict:
                 matches = cur.fetchall()
 
                 if not matches:
-                    return {"ok": False, "error": f"Reviewer '{reviewer}' not found."}
+                    cur.execute("SELECT display_name FROM reviewers ORDER BY display_name")
+                    known = ", ".join(r["display_name"] for r in cur.fetchall())
+                    return {"ok": False, "error": f"Reviewer '{reviewer}' not found. Known reviewers: {known}."}
                 if len(matches) > 1:
-                    return {"ok": False, "error": f"Reviewer '{reviewer}' is ambiguous ({len(matches)} matches). Use the reviewer ID."}
+                    names = ", ".join(m["display_name"] for m in matches)
+                    return {"ok": False, "error": f"Reviewer '{reviewer}' is ambiguous ({len(matches)} matches: {names}). Use the reviewer ID."}
 
                 rid, rname = matches[0]["reviewer_id"], matches[0]["display_name"]
 

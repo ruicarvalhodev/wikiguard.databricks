@@ -29,6 +29,7 @@ def search_cases(
     wiki: Optional[str] = None,
     tier: Optional[str] = None,
     min_risk: Optional[float] = None,
+    max_risk: Optional[float] = None,
     editor: Optional[str] = None,
     assigned_to: Optional[str] = None,
     limit: int = 10,
@@ -45,6 +46,8 @@ def search_cases(
             return {"ok": False, "error": f"Invalid status '{status}'. Valid: {sorted(_VALID_STATUS)}."}
         if tier and tier not in ("A", "B", "C", "D", "N"):
             return {"ok": False, "error": f"Invalid tier '{tier}'. Valid: A, B, C, D, N."}
+        if max_risk is not None and not (0 <= float(max_risk) <= 1):
+            return {"ok": False, "error": "max_risk must be between 0 and 1."}
 
         where, params = [], []
         if status:
@@ -59,6 +62,9 @@ def search_cases(
         if min_risk is not None:
             where.append("c.revert_risk >= %s")
             params.append(float(min_risk))
+        if max_risk is not None:
+            where.append("c.revert_risk <= %s")
+            params.append(float(max_risk))
         if editor:
             where.append("c.editor = %s")
             params.append(editor)
@@ -298,16 +304,26 @@ def query_triage_metrics() -> dict:
 
                 cur.execute(
                     """
-                    SELECT COALESCE(r.display_name, 'unassigned') AS reviewer,
-                           count(*) AS open_cases
-                    FROM cases c
-                    LEFT JOIN reviewers r ON r.reviewer_id = c.assigned_to
-                    WHERE c.status IN ('open', 'in_review')
-                    GROUP BY r.display_name
-                    ORDER BY open_cases DESC
+                    SELECT r.display_name AS reviewer,
+                           count(c.case_id) AS open_cases
+                    FROM reviewers r
+                    LEFT JOIN cases c ON c.assigned_to = r.reviewer_id
+                        AND c.status IN ('open', 'in_review')
+                    GROUP BY r.reviewer_id, r.display_name
+                    ORDER BY open_cases DESC, r.display_name
                     """
                 )
                 per_reviewer = cur.fetchall()
+
+                cur.execute(
+                    """
+                    SELECT count(*) AS open_cases
+                    FROM cases
+                    WHERE assigned_to IS NULL AND status IN ('open', 'in_review')
+                    """
+                )
+                unassigned_row = cur.fetchone()
+                unassigned_open = unassigned_row["open_cases"] if unassigned_row else 0
 
                 cur.execute(
                     """
@@ -326,6 +342,7 @@ def query_triage_metrics() -> dict:
             "by_status": by_status,
             "by_tier": by_tier,
             "open_per_reviewer": per_reviewer,
+            "unassigned_open": unassigned_open,
             "oldest_open_case": oldest,
         })
     except Exception as exc:
