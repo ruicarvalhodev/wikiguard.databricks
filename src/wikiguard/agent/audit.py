@@ -9,6 +9,7 @@ If logging itself fails, the tool's result is still returned to the caller.
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import functools
 import inspect
@@ -42,6 +43,31 @@ def new_session() -> str:
 def get_session_id() -> str:
     """Return the current session id."""
     return _session_var.get()
+
+
+# ---------------------------------------------------------------------------
+# Audit disable context manager
+# ---------------------------------------------------------------------------
+
+_audit_disabled_var: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_audit_disabled", default=False
+)
+
+
+@contextlib.contextmanager
+def audit_disabled():
+    """
+    Context manager that suppresses audit logging for all @audited calls within
+    it.  Use this for UI code that calls the tools without agent context, so
+    human actions are never counted as agent activity in agent_actions.
+
+    The tool still executes normally; only the ``agent_actions`` INSERT is skipped.
+    """
+    token = _audit_disabled_var.set(True)
+    try:
+        yield
+    finally:
+        _audit_disabled_var.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -116,27 +142,28 @@ def audited(is_write: bool) -> Callable:
                 result = {"ok": False, "error": str(exc)}
             latency_ms = int((time.perf_counter() - start) * 1000)
 
-            try:
-                with connect() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            INSERT INTO agent_actions
-                                (session_id, tool_name, tool_input,
-                                 tool_output, is_write, latency_ms)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                            """,
-                            (
-                                uuid.UUID(get_session_id()),
-                                func.__name__,
-                                _truncate_for_log(tool_input),
-                                _truncate_for_log(result),
-                                is_write,
-                                latency_ms,
-                            ),
-                        )
-            except Exception as _audit_exc:
-                log.warning("audit log failed: %s", _audit_exc)
+            if not _audit_disabled_var.get():
+                try:
+                    with connect() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                INSERT INTO agent_actions
+                                    (session_id, tool_name, tool_input,
+                                     tool_output, is_write, latency_ms)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                                """,
+                                (
+                                    uuid.UUID(get_session_id()),
+                                    func.__name__,
+                                    _truncate_for_log(tool_input),
+                                    _truncate_for_log(result),
+                                    is_write,
+                                    latency_ms,
+                                ),
+                            )
+                except Exception as _audit_exc:
+                    log.warning("audit log failed: %s", _audit_exc)
 
             return result
 
