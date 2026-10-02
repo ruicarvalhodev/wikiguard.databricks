@@ -1,0 +1,19 @@
+# WikiGuard — Databricks App configuration
+#
+# The Databricks Apps runtime automatically sets STREAMLIT_SERVER_PORT and
+# STREAMLIT_SERVER_ADDRESS=0.0.0.0 for Streamlit; no manual port wiring needed.
+#
+# Resources (create these in the App UI before deploying):
+#   contact-email  — Secret: wikiguard/contact_email  (operator email for Wikimedia User-Agent)
+#   lakebase-url   — Secret: wikiguard/lakebase_url   (full Postgres connection string)
+#   sql-warehouse  — SQL Warehouse                     (the warehouse used by agent tools)
+
+command: ['streamlit', 'run', 'app/main.py']
+
+env:
+  - name: WIKIGUARD_CONTACT_EMAIL
+    valueFrom: contact-email
+  - name: WIKIGUARD_LAKEBASE_URL
+    valueFrom: lakebase-url
+  - name: WIKIGUARD_SQL_WAREHOUSE_ID
+    valueFrom: sql-warehouse

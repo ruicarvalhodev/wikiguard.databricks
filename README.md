@@ -275,3 +275,54 @@ need only change `status`.
 
 `REPLICA IDENTITY FULL` is set on `cases`, `case_notes`, and `agent_actions`
 so the Change Data Feed (Phase 5) carries full before/after row images.
+
+## App
+
+The WikiGuard frontend is a Streamlit app deployed via Databricks Apps.  Its
+entry point is `app/main.py`; the `app.yaml` at the repo root tells the
+runtime how to start it.
+
+### Resources
+
+Create these four resources in the App UI **before** deploying.  The resource
+**key** is what you type in the UI; `app.yaml` maps each key to an environment
+variable via `valueFrom`.
+
+| Resource | Type | Key | Environment variable |
+| --- | --- | --- | --- |
+| Operator contact email | Secret (`wikiguard/contact_email`) | `contact-email` | `WIKIGUARD_CONTACT_EMAIL` |
+| Lakebase connection URL | Secret (`wikiguard/lakebase_url`) | `lakebase-url` | `WIKIGUARD_LAKEBASE_URL` |
+| SQL warehouse | SQL Warehouse | `sql-warehouse` | `WIKIGUARD_SQL_WAREHOUSE_ID` |
+| Agent model endpoint | Serving endpoint (`databricks-claude-sonnet-5-5`) | *(no key needed)* | *(grants **Can Query** only — no env var)* |
+
+The first three secrets and the warehouse resolve to their values at startup;
+the model endpoint resource only grants the app service principal **Can Query**
+permission on the serving endpoint — `DatabricksOpenAI()` picks up the
+credential automatically.
+
+### `app.yaml` mapping
+
+```yaml
+command: ['streamlit', 'run', 'app/main.py']
+
+env:
+  - name: WIKIGUARD_CONTACT_EMAIL
+    valueFrom: contact-email
+  - name: WIKIGUARD_LAKEBASE_URL
+    valueFrom: lakebase-url
+  - name: WIKIGUARD_SQL_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+```
+
+The Databricks Apps runtime automatically sets `STREAMLIT_SERVER_PORT` and
+`STREAMLIT_SERVER_ADDRESS=0.0.0.0`; no manual port wiring is needed.
+
+### After deploying
+
+Open the **System check** page first.  It runs all eight connectivity and
+configuration checks (identity, environment variables, Lakebase, three
+warehouse tables, model endpoint, MediaWiki API) and shows ✅ or ❌ for each.
+
+The page displays the app service principal's **application ID** prominently
+at the top — this is the ID you need when writing Unity Catalog `GRANT`
+statements.  The hints next to each ❌ tell you exactly what to fix.

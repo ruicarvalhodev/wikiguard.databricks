@@ -249,6 +249,14 @@ def load_contact_email() -> str:
                 "Run notebooks/03_create_secrets to set it up."
             ) from exc
 
+    # Inside a Databricks App, a missing env var is always a misconfiguration.
+    if os.environ.get("DATABRICKS_APP_NAME"):
+        raise RuntimeError(
+            "WIKIGUARD_CONTACT_EMAIL is not set.  "
+            "Add a secret resource with key 'contact-email' to the app "
+            "and map it to WIKIGUARD_CONTACT_EMAIL in app.yaml."
+        )
+
     return "local-dev@example.com"
 
 

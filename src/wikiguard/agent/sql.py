@@ -41,6 +41,14 @@ def get_sql_warehouse_id() -> str:
                 "Run notebooks/03_create_secrets to set it up."
             ) from exc
 
+    # Inside a Databricks App, a missing env var is always a misconfiguration.
+    if os.environ.get("DATABRICKS_APP_NAME"):
+        raise RuntimeError(
+            "WIKIGUARD_SQL_WAREHOUSE_ID is not set.  "
+            "Add a SQL warehouse resource with key 'sql-warehouse' to the app "
+            "and map it to WIKIGUARD_SQL_WAREHOUSE_ID in app.yaml."
+        )
+
     raise RuntimeError(
         "WIKIGUARD_SQL_WAREHOUSE_ID env var is not set and not running on "
         "Databricks.  Export the env var or run notebooks/03_create_secrets."
