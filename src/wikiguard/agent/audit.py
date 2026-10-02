@@ -13,6 +13,7 @@ import contextvars
 import functools
 import inspect
 import json
+import logging
 import time
 import uuid
 from datetime import date, datetime
@@ -20,6 +21,8 @@ from decimal import Decimal
 from typing import Any, Callable
 
 from wikiguard.lakebase.client import connect
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Session id
@@ -68,10 +71,16 @@ _MAX_LOG_BYTES = 4000
 
 
 def _truncate_for_log(obj: Any) -> str:
-    """Serialise and truncate to a few KB for the audit log."""
+    """Serialise for the audit log.
+
+    If the serialised form exceeds ``_MAX_LOG_BYTES``, store a valid summary
+    object instead of a truncated string so the column always contains
+    parseable JSON.
+    """
     text = json.dumps(json_safe(obj), default=str, ensure_ascii=False)
     if len(text.encode()) > _MAX_LOG_BYTES:
-        return text[: _MAX_LOG_BYTES] + "…"
+        preview = text[:200]
+        return json.dumps({"truncated": True, "size": len(text), "preview": preview})
     return text
 
 
@@ -126,8 +135,8 @@ def audited(is_write: bool) -> Callable:
                                 latency_ms,
                             ),
                         )
-            except Exception:
-                pass  # audit logging must not break the tool
+            except Exception as _audit_exc:
+                log.warning("audit log failed: %s", _audit_exc)
 
             return result
 

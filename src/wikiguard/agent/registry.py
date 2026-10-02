@@ -45,7 +45,8 @@ def tool_specs() -> list[dict]:
                 "description": (
                     "Search the review queue with optional filters. Returns cases in "
                     "priority order (priority DESC, revert_risk DESC, event_ts DESC). "
-                    "Call with no arguments to see the top of the queue."
+                    "Call with no arguments to see the top of the queue. "
+                    "Use max_risk to find low-risk cases that may be false positives."
                 ),
                 "parameters": {
                     "type": "object",
@@ -53,7 +54,8 @@ def tool_specs() -> list[dict]:
                         "status": {"type": "string", "enum": ["open", "in_review", "escalated", "resolved", "dismissed"]},
                         "wiki": {"type": "string"},
                         "tier": {"type": "string", "enum": ["A", "B", "C", "D", "N"]},
-                        "min_risk": {"type": "number"},
+                        "min_risk": {"type": "number", "minimum": 0, "maximum": 1},
+                        "max_risk": {"type": "number", "minimum": 0, "maximum": 1, "description": "Inclusive upper bound on revert_risk; use to find low-risk cases that may be false positives"},
                         "editor": {"type": "string"},
                         "assigned_to": {"type": "string", "description": "Reviewer name or ID"},
                         "limit": {"type": "integer", "default": 10, "maximum": 50},
