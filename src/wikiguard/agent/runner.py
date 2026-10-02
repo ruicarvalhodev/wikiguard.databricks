@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 from databricks_openai import DatabricksOpenAI
 
@@ -67,6 +67,8 @@ def run_agent(
     messages: list[dict],
     session_id: Optional[str] = None,
     max_steps: int = 10,
+    on_tool_call: Optional[Callable] = None,
+    reviewer_name: Optional[str] = None,
 ) -> dict:
     """
     Run the agent loop for one conversational turn.
@@ -82,6 +84,13 @@ def run_agent(
         A new UUID is generated if not provided.
     max_steps:
         Maximum number of model calls before giving up.
+    on_tool_call:
+        Optional callback invoked right after each tool runs, with
+        ``{"name", "arguments", "ok", "is_write"}``.  Exceptions raised
+        by the callback are caught and ignored.
+    reviewer_name:
+        When set, one line is appended to the system prompt so the model
+        can resolve "me" / "myself" to the reviewer's name.
 
     Returns
     -------
@@ -96,13 +105,21 @@ def run_agent(
     sid = session_id or new_session()
     _session_var.set(sid)
 
+    _system = SYSTEM_PROMPT
+    if reviewer_name:
+        _system = (
+            SYSTEM_PROMPT
+            + f"\nYou are assisting the reviewer {reviewer_name}."
+            f" When they say \"me\" or \"myself\", they mean {reviewer_name}."
+        )
+
     history = list(messages)           # shallow copy; caller's list unchanged
     this_turn_calls: list[dict] = []
     specs = tool_specs()
     client = DatabricksOpenAI()
 
     for _ in range(max_steps):
-        full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+        full_messages = [{"role": "system", "content": _system}] + history
 
         try:
             resp = client.chat.completions.create(
@@ -152,12 +169,18 @@ def run_agent(
                 else:
                     result = call_tool(name, args)
 
-                this_turn_calls.append({
+                _tc = {
                     "name": name,
                     "arguments": args,
                     "ok": bool(result.get("ok", True)),
                     "is_write": name in _WRITE_TOOLS,
-                })
+                }
+                this_turn_calls.append(_tc)
+                if on_tool_call is not None:
+                    try:
+                        on_tool_call(_tc)
+                    except Exception:
+                        pass
 
                 result_text = json.dumps(result, default=str, ensure_ascii=False)
                 history.append({
