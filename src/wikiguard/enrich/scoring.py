@@ -4,7 +4,8 @@ WikiGuard edit risk scoring.
 Selects pending tier A/B candidates from silver.candidates, scores them
 with the Lift Wing revertrisk model one by one, and appends results to
 silver.edit_risk.  Rows that raise an exception are skipped and retried
-on the next run; 422 responses are written as final (no parent revision).
+on the next run; 422 responses are written as final (no parent revision);
+400 responses are written as final (wiki not supported by the model).
 """
 from __future__ import annotations
 
@@ -75,8 +76,8 @@ def score_pending(
     Returns
     -------
     dict
-        Summary with keys: selected, scored, no_parent_422, failed,
-        invalid_response, given_up.
+        Summary with keys: selected, scored, no_parent_422,
+        unsupported_400, failed, invalid_response, given_up.
     """
     candidates = spark.table(config.silver_candidates_table)
 
@@ -115,10 +116,11 @@ def score_pending(
         .collect()
     )
 
-    n_selected        = len(rows)
-    n_scored          = 0
-    n_no_parent       = 0
-    n_failed          = 0
+    n_selected         = len(rows)
+    n_scored           = 0
+    n_no_parent        = 0
+    n_unsupported_400  = 0
+    n_failed           = 0
     n_invalid_response = 0
     results            = []
     error_rows         = []
@@ -141,6 +143,8 @@ def score_pending(
             })
             if result["http_status"] == 422:
                 n_no_parent += 1
+            elif result["http_status"] == 400:
+                n_unsupported_400 += 1
             else:
                 n_scored += 1
 
@@ -174,6 +178,9 @@ def score_pending(
                 "response_body": response_body,
             })
 
+    if n_unsupported_400:
+        log.info("Lift Wing HTTP 400 (wiki not supported): %d revision(s)", n_unsupported_400)
+
     if results:
         (
             spark.createDataFrame(results, schema=_RESULT_SCHEMA)
@@ -194,6 +201,7 @@ def score_pending(
         "selected":          n_selected,
         "scored":            n_scored,
         "no_parent_422":     n_no_parent,
+        "unsupported_400":   n_unsupported_400,
         "failed":            n_failed,
         "invalid_response":  n_invalid_response,
         "given_up":          n_given_up,

@@ -8,10 +8,12 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Deploy jobs
 dbutils.widgets.text("job_file", "", "job_file (empty = deploy all)")
 _job_file = dbutils.widgets.get("job_file").strip()
 
+# COMMAND ----------
+
+# DBTITLE 1,Deploy jobs
 from wikiguard.common.jobs import JOBS_DIR, deploy_all, upsert_job
 
 if _job_file:
