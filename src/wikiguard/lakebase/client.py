@@ -56,6 +56,14 @@ def get_lakebase_url() -> str:
                 "Run notebooks/03_create_secrets to set it up."
             ) from exc
 
+    # Inside a Databricks App, a missing env var is always a misconfiguration.
+    if os.environ.get("DATABRICKS_APP_NAME"):
+        raise RuntimeError(
+            "WIKIGUARD_LAKEBASE_URL is not set.  "
+            "Add a secret resource with key 'lakebase-url' to the app "
+            "and map it to WIKIGUARD_LAKEBASE_URL in app.yaml."
+        )
+
     raise RuntimeError(
         "No Lakebase URL found.  Set the WIKIGUARD_LAKEBASE_URL env var "
         "for local development, or run notebooks/03_create_secrets on Databricks."

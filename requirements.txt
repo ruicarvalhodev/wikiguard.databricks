@@ -1,0 +1,8 @@
+# WikiGuard app dependencies — installed by the Databricks Apps runtime.
+# requirements-dev.txt is separate (pytest etc.) and is NOT installed in the app.
+streamlit
+pandas
+psycopg[binary]
+databricks-sdk
+databricks-openai
+requests
