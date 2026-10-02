@@ -12,7 +12,8 @@ from psycopg.rows import dict_row
 from wikiguard.agent.audit import audited, json_safe
 from wikiguard.lakebase.client import connect
 
-_VALID_STATUS = {"open", "in_review", "escalated", "resolved", "dismissed"}
+_VALID_STATUS      = {"open", "in_review", "escalated", "resolved", "dismissed"}
+_VALID_AUTHOR_TYPE = {"human", "agent"}
 
 
 @audited(is_write=True)
@@ -90,11 +91,17 @@ def assign_case(case_id: int, reviewer: str) -> dict:
 
 
 @audited(is_write=True)
-def update_case_status(case_id: int, status: str, reason: str) -> dict:
+def update_case_status(
+    case_id: int, status: str, reason: str,
+    *, author_type: str = "agent", author_id: int | None = None,
+) -> dict:
     """
-    Update a case's status and add the reason as an agent note in the same
-    transaction. The status must be a valid case_status value. The reason is
-    required and non-empty. Errors if the case already has that status.
+    Update a case's status and add the reason as a note in the same transaction.
+    The status must be a valid case_status value. The reason is required and
+    non-empty. Errors if the case already has that status.
+    author_type defaults to 'agent'; pass 'human' with author_id to attribute
+    the note to a reviewer.  The model must NOT pass these parameters — they
+    are intentionally absent from the tool spec in registry.py.
     """
     try:
         cid = int(case_id)
@@ -102,6 +109,8 @@ def update_case_status(case_id: int, status: str, reason: str) -> dict:
             return {"ok": False, "error": f"Invalid status '{status}'. Valid: {sorted(_VALID_STATUS)}."}
         if not reason or not str(reason).strip():
             return {"ok": False, "error": "reason is required and must be non-empty."}
+        if author_type not in _VALID_AUTHOR_TYPE:
+            return {"ok": False, "error": f"Invalid author_type '{author_type}'. Valid: {sorted(_VALID_AUTHOR_TYPE)}."}
 
         with connect() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
@@ -121,10 +130,10 @@ def update_case_status(case_id: int, status: str, reason: str) -> dict:
                 )
                 cur.execute(
                     """
-                    INSERT INTO case_notes (case_id, author_type, body)
-                    VALUES (%s, 'agent', %s)
+                    INSERT INTO case_notes (case_id, author_type, author_id, body)
+                    VALUES (%s, %s, %s, %s)
                     """,
-                    (cid, str(reason).strip()),
+                    (cid, author_type, author_id, str(reason).strip()),
                 )
                 cur.execute(
                     "SELECT case_id, status, resolved_at FROM cases WHERE case_id = %s",
@@ -144,15 +153,22 @@ def update_case_status(case_id: int, status: str, reason: str) -> dict:
 
 
 @audited(is_write=True)
-def add_case_note(case_id: int, body: str) -> dict:
+def add_case_note(
+    case_id: int, body: str,
+    *, author_type: str = "agent", author_id: int | None = None,
+) -> dict:
     """
-    Add a note to a case (author_type = 'agent'). The body must be non-empty.
-    Returns the note id and timestamp.
+    Add a note to a case. The body must be non-empty. Returns the note id and
+    timestamp. author_type defaults to 'agent'; pass 'human' with author_id to
+    attribute the note to a reviewer.  The model must NOT pass these parameters
+    — they are intentionally absent from the tool spec in registry.py.
     """
     try:
         cid = int(case_id)
         if not body or not str(body).strip():
             return {"ok": False, "error": "body is required and must be non-empty."}
+        if author_type not in _VALID_AUTHOR_TYPE:
+            return {"ok": False, "error": f"Invalid author_type '{author_type}'. Valid: {sorted(_VALID_AUTHOR_TYPE)}."}
 
         with connect() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
@@ -162,11 +178,11 @@ def add_case_note(case_id: int, body: str) -> dict:
 
                 cur.execute(
                     """
-                    INSERT INTO case_notes (case_id, author_type, body)
-                    VALUES (%s, 'agent', %s)
+                    INSERT INTO case_notes (case_id, author_type, author_id, body)
+                    VALUES (%s, %s, %s, %s)
                     RETURNING note_id, created_at
                     """,
-                    (cid, str(body).strip()),
+                    (cid, author_type, author_id, str(body).strip()),
                 )
                 row = cur.fetchone()
 
