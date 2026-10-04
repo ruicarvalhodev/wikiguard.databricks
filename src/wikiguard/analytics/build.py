@@ -243,6 +243,36 @@ def build_analytics(spark: SparkSession, config: Config, rows_added: int) -> dic
         "and cdf_lag_seconds showing how fresh the Lakebase change feed is.'"
     )
 
+    # ------------------------------------------------------------------ #
+    # f. gold.vw_bronze_latency                                           #
+    #    Per-minute p50/p95 ingest latency over the last hour.            #
+    #    VIEW — rebuilt (CREATE OR REPLACE) on every analytics run so    #
+    #    the definition always reflects the latest bronze_table path.     #
+    # ------------------------------------------------------------------ #
+    _latency_view = f"{config.catalog}.{config.gold_schema}.vw_bronze_latency"
+    spark.sql(f"""
+        CREATE OR REPLACE VIEW {_latency_view} AS
+        SELECT
+            date_trunc('minute', ingest_ts)  AS minute,
+            count(*)                         AS events,
+            percentile_approx(lag_s, 0.5)    AS p50_seconds,
+            percentile_approx(lag_s, 0.95)   AS p95_seconds
+        FROM (
+            SELECT ingest_ts,
+                   (unix_millis(ingest_ts)
+                    - unix_millis(CAST(get_json_object(payload, '$.meta.dt') AS TIMESTAMP))) / 1000.0
+                   AS lag_s
+            FROM {config.bronze_table}
+            WHERE ingest_ts > current_timestamp() - INTERVAL 1 HOUR
+        )
+        GROUP BY 1
+    """)
+    spark.sql(
+        f"COMMENT ON VIEW {_latency_view} IS "
+        "'Per-minute ingest latency over the last hour: p50 and p95 seconds between "
+        "Wikipedia edit time (meta.dt) and bronze landing (ingest_ts).'"
+    )
+
     return {
         "case_events_added": rows_added,
         "transitions": transitions_count,
