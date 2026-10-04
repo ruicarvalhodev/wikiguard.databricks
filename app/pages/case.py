@@ -17,6 +17,13 @@ from data import (
     ui_update_case_status,
 )
 
+
+def _fmt_risk(score: float) -> str:
+    """Format a revert risk score as a percentage, never rounding < 1.0 up to 100%."""
+    pct = float(score) * 100
+    return "100.0%" if pct >= 100.0 else f"{min(pct, 99.9):.1f}%"
+
+
 st.title("Case detail")
 
 # ------------------------------------------------------------------ #
@@ -80,7 +87,7 @@ st.header(f"#{case['case_id']} — {case['page_title']}")
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Status",   case["status"])
-c2.metric("Risk",     f"{float(case['revert_risk']):.0%}")
+c2.metric("Risk",     _fmt_risk(case["revert_risk"]))
 c3.metric("Tier",     case["tier"])
 c4.metric("Assignee", case.get("assignee") or "—")
 

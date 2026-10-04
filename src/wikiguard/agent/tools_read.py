@@ -83,7 +83,7 @@ def search_cases(
         sql = f"""
             SELECT c.case_id, c.priority, c.tier, c.revert_risk,
                    c.wiki, c.page_title, c.editor, c.byte_delta,
-                   c.status, c.assigned_to,
+                   c.status, c.assigned_to, c.diff_url,
                    r.display_name AS assignee
             FROM cases c
             LEFT JOIN reviewers r ON r.reviewer_id = c.assigned_to
