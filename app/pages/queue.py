@@ -14,8 +14,14 @@ st.title("📋 Queue")
 # Metrics                                                              #
 # ------------------------------------------------------------------ #
 
-with st.spinner("Loading counts…"):
-    counts = ui_case_counts()
+try:
+    with st.spinner("Loading counts…"):
+        counts = ui_case_counts()
+except Exception:
+    st.error(
+        "Can\u2019t reach Lakebase \u2014 check the **System check** page for details."
+    )
+    st.stop()
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Open",        int(counts.get("open", 0)))
@@ -45,7 +51,10 @@ f4, f5, f6 = st.columns([3, 2, 1])
 with f4:
     risk_range = st.slider("Risk", 0.0, 1.0, (0.0, 1.0), step=0.05, format="%.2f")
 with f5:
-    rev_opts     = [(None, "All")] + list(reviewers())
+    try:
+        rev_opts = [(None, "All")] + list(reviewers())
+    except Exception:
+        rev_opts = [(None, "All")]
     sel_assignee = st.selectbox("Assignee", rev_opts, format_func=lambda x: x[1])
 with f6:
     editor_q = st.text_input("Editor")

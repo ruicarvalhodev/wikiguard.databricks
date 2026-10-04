@@ -16,6 +16,28 @@ from data import (
     ui_pipeline_health,
 )
 
+
+def _fmt_duration(seconds: int) -> str:
+    """Human-readable elapsed time: 'just now', '25 min ago', '1 day 3 h ago'."""
+    if seconds < 120:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60} min ago"
+    if seconds < 86400:
+        return f"{seconds // 3600} h ago"
+    days  = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    s     = "s" if days != 1 else ""
+    return f"{days} day{s} {hours} h ago" if hours else f"{days} day{s} ago"
+
+
+def _fmt_median_time(hours: float) -> str:
+    """Format median dwell time: minutes when < 1 h, decimal hours otherwise."""
+    if pd.isna(hours):
+        return "—"
+    return f"{round(hours * 60)} min" if hours < 1.0 else f"{hours:.1f} h"
+
+
 st.title("\U0001f4ca Analytics")
 
 if st.button("\U0001f504 Refresh", key="btn_refresh_analytics"):
@@ -29,7 +51,8 @@ st.header("Pipeline — volume and velocity")
 
 # Volume metrics
 try:
-    df_counts = ui_pipeline_counts()
+    with st.spinner("Loading volume counts…"):
+        df_counts = ui_pipeline_counts()
     if df_counts.empty:
         st.info("Volume counts unavailable — the SQL warehouse may be starting.")
     else:
@@ -44,7 +67,8 @@ except Exception as _exc:
 
 # Ingest latency chart
 try:
-    df_lat = ui_bronze_latency()
+    with st.spinner("Loading latency data…"):
+        df_lat = ui_bronze_latency()
     if df_lat.empty:
         st.info("No latency data in the last hour — is the connector job running?")
     else:
@@ -102,7 +126,8 @@ except Exception as _exc:
 
 # Analytics freshness
 try:
-    df_health = ui_pipeline_health()
+    with st.spinner("Loading pipeline health…"):
+        df_health = ui_pipeline_health()
     if df_health.empty:
         st.info("No pipeline health data — the analytics job may not have run yet.")
     else:
@@ -111,10 +136,9 @@ try:
         hc1.metric("Last analytics run", str(row["run_at"])[:19])
         lag = row["cdf_lag_seconds"]
         if pd.notna(lag):
-            lag = int(lag)
             hc2.metric(
                 "Lakebase last active",
-                f"{lag // 60} min {lag % 60} s ago",
+                _fmt_duration(int(lag)),
                 help=(
                     "Time elapsed since the last change was captured from Lakebase. "
                     "Grows during quiet periods — this is normal outside active triage sessions."
@@ -133,21 +157,28 @@ st.divider()
 st.header("Review queue")
 
 try:
-    df_triage = ui_daily_triage()
+    with st.spinner("Loading triage data…"):
+        df_triage = ui_daily_triage()
     if df_triage.empty:
         st.info("No daily triage data — the analytics pipeline may not have run yet.")
     else:
-        df_plot = df_triage.sort_values("day")
+        df_plot = df_triage.sort_values("day").copy()
+        df_plot["day_str"] = df_plot["day"].dt.strftime("%b %d")
+        _day_order = (
+            df_plot.drop_duplicates("day_str")
+            .sort_values("day")["day_str"]
+            .tolist()
+        )
 
-        # Cases created per day, stacked by tier
+        # Cases created per day, stacked by tier (ordinal x — one bar per day)
         st.altair_chart(
             alt.Chart(df_plot)
             .mark_bar()
             .encode(
-                x=alt.X("day:T", title="Day"),
+                x=alt.X("day_str:O", sort=_day_order, title="Day"),
                 y=alt.Y("cases_created:Q", title="Cases created"),
                 color=alt.Color("tier:N", title="Tier"),
-                tooltip=["day:T", "tier:N", "cases_created:Q"],
+                tooltip=["day_str:O", "tier:N", "cases_created:Q"],
             )
             .properties(title="Cases created per day by tier", height=220),
             use_container_width=True,
@@ -155,19 +186,19 @@ try:
 
         # Outcomes per day: escalated / resolved / dismissed
         df_out = (
-            df_plot.groupby("day")[["escalated", "resolved", "dismissed"]]
+            df_plot.groupby(["day", "day_str"])[["escalated", "resolved", "dismissed"]]
             .sum()
             .reset_index()
-            .melt(id_vars="day", var_name="outcome", value_name="count")
+            .melt(id_vars=["day", "day_str"], var_name="outcome", value_name="count")
         )
         st.altair_chart(
             alt.Chart(df_out)
             .mark_bar()
             .encode(
-                x=alt.X("day:T", title="Day"),
+                x=alt.X("day_str:O", sort=_day_order, title="Day"),
                 y=alt.Y("count:Q", title="Cases"),
                 color=alt.Color("outcome:N", title="Outcome"),
-                tooltip=["day:T", "outcome:N", "count:Q"],
+                tooltip=["day_str:O", "outcome:N", "count:Q"],
             )
             .properties(title="Case outcomes per day", height=220),
             use_container_width=True,
@@ -199,19 +230,24 @@ st.divider()
 st.header("Case lifecycle")
 
 try:
-    df_trans = ui_case_transitions()
+    with st.spinner("Loading transition data…"):
+        df_trans = ui_case_transitions()
     if df_trans.empty:
         st.info(
             "No transition data yet — cases need to change status at least once "
             "after Change Data Feed was enabled."
         )
     else:
+        df_trans["Median time in state"] = df_trans["median_hours"].apply(
+            _fmt_median_time
+        )
         st.dataframe(
-            df_trans.rename(columns={
-                "from_status":  "From",
-                "to_status":    "To",
-                "count":        "Transitions",
-                "median_hours": "Median hours in state",
+            df_trans[
+                ["from_status", "to_status", "count", "Median time in state"]
+            ].rename(columns={
+                "from_status": "From",
+                "to_status":   "To",
+                "count":       "Transitions",
             }),
             use_container_width=True,
             hide_index=True,
@@ -227,7 +263,8 @@ st.divider()
 st.header("Agent activity")
 
 try:
-    df_agent = ui_agent_daily()
+    with st.spinner("Loading agent activity…"):
+        df_agent = ui_agent_daily()
     if df_agent.empty:
         st.info("No agent activity data yet.")
     else:
@@ -259,7 +296,7 @@ try:
             )
             .properties(
                 title="Tool call frequency",
-                height=max(140, len(df_by_tool) * 28),
+                height=max(len(df_by_tool) * 32, 80),
             ),
             use_container_width=True,
         )

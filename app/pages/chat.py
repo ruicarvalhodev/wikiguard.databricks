@@ -122,7 +122,11 @@ if prompt:
                 on_tool_call=_on_tool_call,
                 reviewer_name=_reviewer_name(),
             )
-        _status.update(state="complete", expanded=False)
+        _n = len(agent_result["tool_calls"])
+        _done_label = (
+            f"Done \u2014 {_n} tool{'s' if _n != 1 else ''}" if _n else "Done"
+        )
+        _status.update(label=_done_label, state="complete", expanded=False)
 
         st.session_state[_SID]  = agent_result["session_id"]
         st.session_state[_MSGS] = agent_result["messages"]
@@ -130,7 +134,14 @@ if prompt:
         reply      = agent_result["reply"]
         tool_calls = agent_result["tool_calls"]
 
-        st.markdown(reply)
+        _AGENT_ERR = (
+            "The assistant is temporarily unavailable",
+            "I\u2019m sorry \u2014 this request needed too many steps",
+        )
+        if any(reply.startswith(p) for p in _AGENT_ERR):
+            st.error(reply)
+        else:
+            st.markdown(reply)
         _render_tool_calls(tool_calls)
 
         st.session_state[_TRANSCRIPT].append({
