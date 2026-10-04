@@ -27,6 +27,11 @@ from wikiguard.agent.tools_write import (
 )
 from wikiguard.lakebase.client import connect
 
+import pandas as pd
+
+from wikiguard.agent.sql import run_sql
+from wikiguard.config import CONFIG
+
 
 # ---------------------------------------------------------------------------
 # Reviewer list
@@ -195,3 +200,123 @@ def ui_add_case_note(case_id: int, body: str) -> dict:
             author_type="human",
             author_id=rid,
         )
+
+
+# ---------------------------------------------------------------------------
+# Analytics queries — cached, read from Delta via SQL warehouse
+# ---------------------------------------------------------------------------
+
+_LATENCY_VIEW = f"{CONFIG.catalog}.{CONFIG.gold_schema}.vw_bronze_latency"
+
+
+@st.cache_data(ttl=60)
+def ui_pipeline_counts() -> pd.DataFrame:
+    """Row counts for bronze, silver edits, silver candidates, and the triage queue."""
+    rows = run_sql(f"""
+        SELECT
+            (SELECT COUNT(*) FROM {CONFIG.bronze_table})            AS bronze,
+            (SELECT COUNT(*) FROM {CONFIG.silver_edits_table})      AS edits,
+            (SELECT COUNT(*) FROM {CONFIG.silver_candidates_table}) AS candidates,
+            (SELECT COUNT(*) FROM {CONFIG.gold_triage_table})       AS queue
+    """)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        for col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=60)
+def ui_bronze_latency() -> pd.DataFrame:
+    """Per-minute p50/p95 ingest latency from vw_bronze_latency (last hour)."""
+    rows = run_sql(f"""
+        SELECT minute, events, p50_seconds, p95_seconds
+        FROM {_LATENCY_VIEW}
+        ORDER BY minute
+    """)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["minute"] = pd.to_datetime(df["minute"])
+        df["events"] = pd.to_numeric(df["events"], errors="coerce")
+        df["p50_seconds"] = pd.to_numeric(df["p50_seconds"], errors="coerce")
+        df["p95_seconds"] = pd.to_numeric(df["p95_seconds"], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=60)
+def ui_pipeline_health() -> pd.DataFrame:
+    """Latest row from pipeline_health."""
+    rows = run_sql(f"""
+        SELECT run_at, case_events_added, transitions_total,
+               agent_actions_total, latest_cdf_ts, cdf_lag_seconds
+        FROM {CONFIG.gold_pipeline_health}
+        ORDER BY run_at DESC
+        LIMIT 1
+    """)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["run_at"] = pd.to_datetime(df["run_at"])
+        df["latest_cdf_ts"] = pd.to_datetime(df["latest_cdf_ts"])
+        for col in ["case_events_added", "transitions_total", "agent_actions_total", "cdf_lag_seconds"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=60)
+def ui_daily_triage() -> pd.DataFrame:
+    """Daily triage activity from agg_daily_triage (most recent 90 rows)."""
+    rows = run_sql(f"""
+        SELECT day, tier, cases_created, escalated, resolved, dismissed, median_hours_to_close
+        FROM {CONFIG.gold_agg_daily_triage}
+        ORDER BY day DESC
+        LIMIT 90
+    """)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["day"] = pd.to_datetime(df["day"])
+        for col in ["cases_created", "escalated", "resolved", "dismissed"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        df["median_hours_to_close"] = pd.to_numeric(df["median_hours_to_close"], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=60)
+def ui_case_transitions() -> pd.DataFrame:
+    """Transition counts and median dwell times (non-snapshot rows only)."""
+    rows = run_sql(f"""
+        SELECT
+            from_status,
+            to_status,
+            COUNT(*)                                                                  AS count,
+            ROUND(PERCENTILE_APPROX(seconds_in_previous_state, 0.5) / 3600.0, 1)    AS median_hours
+        FROM {CONFIG.gold_fact_case_transitions}
+        WHERE is_snapshot = false
+          AND from_status IS NOT NULL
+          AND seconds_in_previous_state IS NOT NULL
+        GROUP BY from_status, to_status
+        ORDER BY count DESC
+    """)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["count"] = pd.to_numeric(df["count"], errors="coerce").fillna(0).astype(int)
+        df["median_hours"] = pd.to_numeric(df["median_hours"], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=60)
+def ui_agent_daily() -> pd.DataFrame:
+    """Per-day, per-tool agent activity from agg_agent_daily."""
+    rows = run_sql(f"""
+        SELECT event_date, tool_name, calls, writes, errors,
+               error_rate, avg_latency_ms, p95_latency_ms, sessions
+        FROM {CONFIG.gold_agg_agent_daily}
+        ORDER BY event_date DESC
+    """)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["event_date"] = pd.to_datetime(df["event_date"])
+        for col in ["calls", "writes", "errors", "sessions"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        for col in ["error_rate", "avg_latency_ms", "p95_latency_ms"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
